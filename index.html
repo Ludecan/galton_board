@@ -1,0 +1,1090 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Galton Board — physics quincunx</title>
+<style>
+  :root{
+    --bg:#05070f; --bg2:#0b1122; --panel:#0d1322cc; --line:#1c2942;
+    --txt:#cfe6ff; --muted:#6f87a8; --accent:#00f7ff; --accent2:#ff2fd6;
+    --field:#0a0f1c; --font:ui-monospace,'Cascadia Mono',Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:linear-gradient(160deg,var(--bg),var(--bg2));
+    color:var(--txt); font-family:var(--font); overflow:hidden;
+    transition:background .5s,color .5s;
+  }
+  #app{display:flex; height:100vh}
+  #stage{flex:1; position:relative; min-width:0}
+  canvas{position:absolute; inset:0; width:100%; height:100%; display:block}
+  #hud{
+    position:absolute; top:10px; left:14px; font-size:11px; color:var(--muted);
+    pointer-events:none; letter-spacing:.5px; display:flex; gap:14px;
+  }
+  #hud b{color:var(--accent); font-weight:600}
+  #panel{
+    width:312px; flex-shrink:0; overflow-y:auto; padding:16px 18px 28px;
+    background:var(--panel); border-left:1px solid var(--line);
+    backdrop-filter:blur(8px); transition:background .5s;
+  }
+  h1{font-size:15px; letter-spacing:3px; margin:2px 0 2px; color:var(--accent)}
+  h1 small{display:block; font-size:9px; letter-spacing:2px; color:var(--muted); font-weight:400; margin-top:3px}
+  .chips{display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 4px}
+  .chip{
+    font-family:var(--font); font-size:10px; letter-spacing:1px; padding:5px 10px;
+    color:var(--muted); background:transparent; border:1px solid var(--line);
+    border-radius:20px; cursor:pointer; transition:all .2s;
+  }
+  .chip.on{color:var(--accent); border-color:var(--accent); box-shadow:0 0 12px -4px var(--accent)}
+  section{margin-top:16px}
+  h2{font-size:9px; letter-spacing:2px; color:var(--muted); font-weight:400; margin:0 0 8px; text-transform:uppercase}
+  .row{display:grid; grid-template-columns:1fr auto; align-items:center; gap:4px 8px; margin-bottom:7px}
+  .row label{font-size:11px}
+  .row output{font-size:11px; color:var(--accent); min-width:44px; text-align:right}
+  .row input[type=range]{grid-column:1/-1; accent-color:var(--accent); width:100%; height:18px}
+  .row.off{opacity:.35; pointer-events:none}
+  .btns{display:flex; gap:8px; margin-top:14px; flex-wrap:wrap}
+  button.act{
+    font-family:var(--font); flex:1; padding:9px 6px; font-size:11px; letter-spacing:1px;
+    color:var(--bg); background:var(--accent); border:none; border-radius:6px; cursor:pointer;
+  }
+  button.act.ghost{background:transparent; color:var(--accent); border:1px solid var(--accent)}
+  .chk{display:flex; align-items:center; gap:8px; font-size:11px; margin-top:10px; cursor:pointer}
+  .chk input{accent-color:var(--accent)}
+  select{
+    margin-left:auto; background:var(--bg2); color:var(--txt); border:1px solid var(--line);
+    border-radius:4px; font:inherit; font-size:11px; padding:2px 5px; cursor:pointer;
+  }
+  #tip{
+    position:absolute; display:none; pointer-events:none; z-index:5; font-size:10px;
+    background:var(--panel); border:1px solid var(--line); border-radius:5px;
+    padding:6px 9px; color:var(--txt); line-height:1.55; white-space:nowrap;
+    backdrop-filter:blur(6px); box-shadow:0 4px 18px #0008;
+  }
+  #tip b{color:var(--accent)}
+  #stats{margin-top:16px; border-top:1px solid var(--line); padding-top:12px; font-size:11px}
+  #stats .s{display:flex; justify-content:space-between; margin-bottom:4px}
+  #stats .s span:last-child{color:var(--accent)}
+  #verdict{
+    margin-top:10px; padding:9px; text-align:center; font-size:11px; letter-spacing:2px;
+    border:1px dashed var(--line); border-radius:6px;
+  }
+  .note{font-size:9px; color:var(--muted); line-height:1.5; margin-top:10px}
+  #toast{
+    position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
+    background:var(--accent); color:var(--bg); font-size:11px; padding:7px 14px;
+    border-radius:20px; opacity:0; transition:opacity .3s; pointer-events:none;
+  }
+  @media (max-width:760px){
+    #app{flex-direction:column}
+    #panel{width:100%; height:45%; border-left:none; border-top:1px solid var(--line)}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="cv"></canvas>
+    <div id="hud">
+      <span>fps <b id="hFps">–</b></span>
+      <span>active <b id="hAct">0</b></span>
+      <span>settled <b id="hSet">0</b></span>
+      <span id="hDone"></span>
+    </div>
+    <div id="toast"></div>
+    <div id="tip"></div>
+  </div>
+  <aside id="panel">
+    <h1>GALTON&nbsp;BOARD<small>physics quincunx · binomial → gaussian</small></h1>
+    <div class="chips" id="chips"></div>
+
+    <section>
+      <h2>Board</h2>
+      <div class="row"><label for="rows" title="Pin rows (floors). Each row a ball crosses is one fair coin flip, so the landing lanes follow a binomial B(rows, ½). More rows → closer to a gaussian.">Rows (floors)</label><output id="o_rows"></output><input id="rows" type="range" min="2" max="40" step="1" title="Pin rows (floors). Each row = one fair coin flip → binomial B(rows, ½). More rows → closer to gaussian."></div>
+      <label class="chk" title="One counting bin per landing lane (bins = rows + 1) — the sharpest view of the distribution."><input type="checkbox" id="binsync"> bins = rows + 1</label>
+      <label class="chk" title="The bin area already zooms out so the tallest pile always fits. Endless mode instead drops the bottom row of every bin when a pile overflows — the pile keeps full-size balls but forgets old rows. Stats stay cumulative either way."><input type="checkbox" id="endless"> endless bins (old rows scroll off)</label>
+      <div class="row" id="r_bins"><label for="bins" title="Counting bins at the bottom. Fewer than lanes → adjacent lanes merge into one bin; more → one lane straddles two bins. Both blur the shape (χ² stays green, that's the board, not a bug).">Doors (bins)</label><output id="o_bins"></output><input id="bins" type="range" min="2" max="48" step="1" title="Counting bins at the bottom. Mismatch with lanes blurs the shape — χ² stays green, KS turns amber/red."></div>
+    </section>
+
+    <section>
+      <h2>Drop</h2>
+      <div class="row"><label for="balls" title="Total balls to drop. Statistical tests need a few hundred; ≥2000 to see the gaussian sharpen.">Balls</label><output id="o_balls"></output><input id="balls" type="range" min="100" max="20000" step="100" title="Total balls to drop. Tests need a few hundred; ≥2000 to see the gaussian sharpen."></div>
+      <div class="row"><label for="rate">Rate (balls/s)</label><output id="o_rate"></output><input id="rate" type="range" min="1" max="120" step="1" title="Balls released per second. Purely throughput — the distribution doesn't care."></div>
+      <div class="row"><label for="speed" title="Initial downward velocity when a ball leaves the funnel (px/s) — vs gravity, which is the acceleration pulling it. It only shifts the first row or two: falling ~200px at g=1400 adds ~750px/s, so after row 2 gravity dominates and any initial speed is washed out. The distribution is unchanged — that's why it seems to do nothing.">Drop speed</label><output id="o_speed"></output><input id="speed" type="range" min="0" max="300" step="10" title="Initial downward velocity at release (px/s). Gravity (~+750px/s per 200px fallen) washes it out after row 2 — fall time changes, distribution doesn't."></div>
+    </section>
+
+    <section>
+      <h2>Physics</h2>
+      <div class="row"><label for="grav" title="Downward acceleration (px/s²). Scales fall speed and impact velocity — grazes get harder, piles pack a bit differently. The fair ±1 lane choice per row is unaffected.">Gravity</label><output id="o_grav"></output><input id="grav" type="range" min="200" max="3000" step="50" title="Downward acceleration (px/s²). Changes fall speed & impact energy, not the coin-flip outcome."></div>
+      <div class="row"><label for="rest" title="Bounciness of floor / wall / divider / pile impacts. 0 = clay, 0.85 = superball. Pile look changes a lot; settled counts don't.">Restitution</label><output id="o_rest"></output><input id="rest" type="range" min="0" max="0.85" step="0.05" title="Bounciness of floor/wall/divider/pile impacts. 0 = clay, 0.85 = superball."></div>
+      <div class="row"><label for="jit" title="Symmetry-breaking kick when a ball strikes a pin — how wild the grazing looks. The ±1 lane decision itself is always a fair coin (random), so the distribution never tilts.">Pin jitter</label><output id="o_jit"></output><input id="jit" type="range" min="0" max="1" step="0.05" title="Chaos strength on pin strikes. Looks wilder, distribution identical — each row is a fair coin flip either way."></div>
+      <label class="chk" title="¼× simulation speed, for watching individual bounces."><input type="checkbox" id="slow"> slow motion (¼×)</label>
+      <label class="chk" title="auto = theme default (neon / elemental / vaporwave on). on / off force it for every theme.">trails
+        <select id="trails">
+          <option value="auto">auto</option><option value="on">on</option><option value="off">off</option>
+        </select>
+      </label>
+    </section>
+
+    <div class="btns">
+      <button class="act" id="bPlay" title="Pause / resume the simulation">⏸ PAUSE</button>
+      <button class="act ghost" id="bReset" title="Clear all balls and start the run again">↺ RESET</button>
+      <button class="act ghost" id="bBurst" title="Release 100 balls instantly">✚ 100</button>
+    </div>
+    <div class="btns"><button class="act ghost" id="bShare" title="Copy this URL — every setting travels inside its #hash">⤴ COPY SHARE LINK</button></div>
+
+    <div id="stats"></div>
+    <div id="verdict">drop some balls…</div>
+    <p class="note" id="statNote"></p>
+  </aside>
+</div>
+
+<script>
+'use strict';
+/* ============ math ============ */
+function gammaln(x){ // Lanczos
+  const g=[76.18009172947146,-86.50532032941677,24.01409824083091,
+    -1.231739572450155,0.1208650973866179e-2,-0.5395239384953e-5];
+  let y=x, tmp=x+5.5; tmp-=(x+0.5)*Math.log(tmp); let ser=1.000000000190015;
+  for(let j=0;j<6;j++) ser+=g[j]/++y;
+  return -tmp+Math.log(2.5066282746310005*ser/x);
+}
+function gser(a,x){ let ap=a,del=1/a,s=del;
+  for(let n=0;n<300;n++){ ap++; del*=x/ap; s+=del; if(Math.abs(del)<s*1e-13) break; }
+  return s*Math.exp(-x+a*Math.log(x)-gammaln(a));
+}
+function gcf(a,x){ const FP=1e-300; let b=x+1-a,c=1/FP,d=1/b,h=d;
+  for(let i=1;i<=300;i++){ const an=-i*(i-a); b+=2; d=an*d+b;
+    if(Math.abs(d)<FP)d=FP; c=b+an/c; if(Math.abs(c)<FP)c=FP; d=1/d;
+    const del=d*c; h*=del; if(Math.abs(del-1)<1e-13) break; }
+  return Math.exp(-x+a*Math.log(x)-gammaln(a))*h;
+}
+function gammq(a,x){ if(x<=0)return 1; return x<a+1 ? 1-gser(a,x) : gcf(a,x); }
+function erf(x){ const s=x<0?-1:1; x=Math.abs(x);
+  const t=1/(1+0.3275911*x);
+  const y=1-((((1.061405429*t-1.453152027)*t+1.421413741)*t-0.284496736)*t+0.254829592)*t*Math.exp(-x*x);
+  return s*y;
+}
+function normCdf(z){ return 0.5*(1+erf(z/Math.SQRT2)); }
+function normPdf(x,m,s){ const z=(x-m)/s; return Math.exp(-0.5*z*z)/(s*Math.sqrt(2*Math.PI)); }
+function kolmogorovQ(alam){ // survival of Kolmogorov dist (NR kolmogorov)
+  if(alam<1e-5) return 1;
+  const a2=-2*alam*alam; let sum=0, fac=2;
+  for(let j=1;j<=100;j++){ const t=fac*Math.exp(a2*j*j); sum+=t; fac=-fac;
+    if(Math.abs(t)<1e-10*Math.abs(sum)) break; }
+  return Math.min(1,Math.max(0,sum<0?1:sum));
+}
+function ksNormal(xs,mu,sd){ // one-sample KS vs N(mu,sd); xs sorted
+  const n=xs.length; let d=0;
+  for(let i=0;i<n;i++){ const phi=normCdf((xs[i]-mu)/sd);
+    d=Math.max(d,(i+1)/n-phi, phi-i/n); }
+  const h=(Math.sqrt(n)+0.12+0.11/Math.sqrt(n))*d;
+  return {d, p:kolmogorovQ(h)};
+}
+function chiSquareP(chi,df){ return gammq(df/2, chi/2); }
+
+/* ============ themes ============ */
+const THEMES={
+  neon:{
+    css:{'--bg':'#05070f','--bg2':'#0b1122','--panel':'#0d1322cc','--line':'#1c2942',
+      '--txt':'#cfe6ff','--muted':'#6f87a8','--accent':'#00f7ff','--accent2':'#ff2fd6','--field':'#0a0f1c',
+      '--font':"ui-monospace,'Cascadia Mono',Consolas,monospace"},
+    pal:['#00f7ff','#ff2fd6','#7dff3f','#ffe14d','#ff5e3a','#9d6bff'],
+    style:'neon', glow:true, trails:true,
+    pin:{hi:'#aeffff',lo:'#0aa3c9',stroke:'#00f7ff'},
+    div:'rgba(0,247,255,.8)', floor:'#060a14', floorStroke:'#00f7ff', label:'#9be9ff',
+    hist:'rgba(0,247,255,.20)', exp:'#5b8dff', curve:'#ff2fd6'
+  },
+  wood:{
+    css:{'--bg':'#2b1a0e','--bg2':'#1a0e06','--panel':'#241408dd','--line':'#4a2f17',
+      '--txt':'#eadbc2','--muted':'#a3835f','--accent':'#e0a75e','--accent2':'#8fbf6f','--field':'#1c1006',
+      '--font':"Georgia,'Times New Roman',serif"},
+    pal:['#f2e3c2','#8a4b2a','#c98d4b','#5e8f4e','#b5651d','#d9b26a'],
+    style:'sphere', glow:false, trails:false,
+    pin:{hi:'#ffe9b0',lo:'#8f6b2f',stroke:'#5c431c'},
+    div:'rgba(190,150,90,.85)', floor:'#150b04', floorStroke:'#b8894a', label:'#e8d5b0',
+    hist:'rgba(224,167,94,.22)', exp:'#8fbf6f', curve:'#e56b4a'
+  },
+  metal:{
+    css:{'--bg':'#161b21','--bg2':'#0a0d10','--panel':'#12161bdd','--line':'#2e3640',
+      '--txt':'#d7dee6','--muted':'#7d8894','--accent':'#9fd2e0','--accent2':'#e0b062','--field':'#0d1013',
+      '--font':"ui-monospace,'Cascadia Mono',Consolas,monospace"},
+    pal:['#dfe7ee','#a8b6c2','#c8cfd6','#8e9aa6','#e0b062','#b9c6d2'],
+    style:'chrome', glow:false, trails:false,
+    pin:{hi:'#f4faff',lo:'#4a545e',stroke:'#20262c'},
+    div:'rgba(160,175,190,.75)', floor:'#1d2228', floorStroke:'#7d8894', label:'#cfd8e0',
+    hist:'rgba(160,190,210,.18)', exp:'#e0b062', curve:'#9fd2e0'
+  },
+  gems:{
+    css:{'--bg':'#180a2c','--bg2':'#0c0417','--panel':'#1c0e33dd','--line':'#3a2160',
+      '--txt':'#e9dcff','--muted':'#9a82c4','--accent':'#c9a0ff','--accent2':'#ffd23f','--field':'#120723',
+      '--font':"Georgia,'Times New Roman',serif"},
+    pal:['#ff2f6d','#39ff88','#3fa9ff','#ffd23f','#b34dff','#2ee6c9'],
+    style:'gem', glow:true, trails:false,
+    pin:{hi:'#e6dbff',lo:'#7c5cd6',stroke:'#b9a7ff'},
+    div:'rgba(185,167,255,.7)', floor:'#241040', floorStroke:'#7c4dff', label:'#e6d9ff',
+    hist:'rgba(201,160,255,.22)', exp:'#ffd23f', curve:'#39ff88'
+  },
+  elemental:{
+    css:{'--bg':'#232830','--bg2':'#101216','--panel':'#1a1d22dd','--line':'#3a424c',
+      '--txt':'#e2e8f0','--muted':'#8a95a1','--accent':'#ff8a4c','--accent2':'#7fd4ff','--field':'#141619',
+      '--font':"ui-monospace,'Cascadia Mono',Consolas,monospace"},
+    pal:['#ffd23f','#ff8a3c','#ff4e2e','#ffe9a0','#e8552f','#ffbb6b'],
+    style:'ember', glow:true, trails:true,
+    pin:{hi:'#c3ccd6',lo:'#4a525c',stroke:'#2c323a'},
+    div:'rgba(140,160,180,.55)', floor:'#15181c', floorStroke:'#ff7a3c', label:'#ffd9b8',
+    hist:'rgba(255,138,76,.20)', exp:'#7fd4ff', curve:'#ffd23f'
+  },
+  vaporwave:{
+    css:{'--bg':'#180036','--bg2':'#2d0a52','--panel':'#20053fdd','--line':'#4b1f7a',
+      '--txt':'#ffd9f5','--muted':'#a370c9','--accent':'#ff6ec7','--accent2':'#00f7ff','--field':'#140029',
+      '--font':"Georgia,'Times New Roman',serif"},
+    pal:['#ff6ec7','#00f7ff','#ffd23f','#b34dff','#39ff88','#ff9d5c'],
+    style:'neon', glow:true, trails:true,
+    pin:{hi:'#ffffff',lo:'#c22ba0',stroke:'#ff6ec7'},
+    div:'rgba(255,110,199,.8)', floor:'#0a0018', floorStroke:'#ff2079', label:'#ffb3ef',
+    hist:'rgba(255,110,199,.22)', exp:'#00f7ff', curve:'#ffd23f'
+  }
+};
+
+/* ============ state ============ */
+const P={theme:'vaporwave',rows:40,binsync:false,bins:15,balls:20000,rate:5,speed:200,
+  grav:3000,rest:0.25,jit:0.25,slow:false,auto:true,trails:'auto',endless:false};
+let paused=false, spawned=0;
+let balls=[], counts=[], binVis=[], settledN=0;
+let pile=[], binRows=[]; // per-bin visible count + row codes
+let grid=new Map(), pins=[], statsDirty=false;
+let pinHit=null, binHit=null, lastFx=-9, simClock=0, dirty=true;
+const PMAX=640; let parts=null, pcur=0, pBudget=30;
+
+/* ============ layout ============ */
+const cv=document.getElementById('cv'), ctx=cv.getContext('2d',{alpha:false});
+const stage=document.getElementById('stage');
+let L={}, QUAL=Math.min(2,window.devicePixelRatio||1);
+function layout(){
+  const dpr=QUAL;
+  const w=stage.clientWidth, h=stage.clientHeight;
+  cv.width=w*dpr; cv.height=h*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  const rows=P.rows, bins=P.bins;
+  const padX=26, padTop=46;
+  const floorY=Math.round(h-Math.max(24,Math.min(40,h*0.045)));
+  const availW=w-padX*2, availH=floorY-padTop-Math.max(110,h*0.30);
+  let S=Math.min(availW*0.85/(rows+1),52); // board spans 85% of stage width
+  const vs=Math.min(S*0.87, availH/(rows+0.4));
+  const binsWidth=Math.min(availW,(rows+1)*S);
+  const binW=binsWidth/bins;
+  const dw=Math.min(2.2,binW*0.12);
+  const ballR=Math.max(1.6,Math.min(7,S*0.12,binW*0.26));
+  const binsLeft=w/2-binsWidth/2;
+  L={w,h,rows,bins,padTop,floorY,S,vs,binW,dw,ballR,pinR:ballR*0.62,
+    binsLeft,binsRight:binsLeft+binsWidth,
+    divTop:floorY-Math.max(34,h*0.15), histTop:h*0.34,
+    cell:Math.max(15,S,binW)};
+  pins=[]; grid=new Map();
+  for(let r=0;r<rows;r++){
+    const y=padTop+(r+0.5)*vs;
+    for(let i=0;i<=r;i++){
+      const x=w/2+(i-r/2)*S;
+      const pid=pins.length;
+      pins.push({x,y}); cellIns(grid,x,y,{stat:true,x,y,r:L.pinR,dead:false,pid});
+    }
+  }
+  pinHit=new Float32Array(pins.length).fill(-9);
+  L.pileLimit=Math.min(floorY-ballR-Math.max(12,ballR),
+                      padTop+rows*vs+ballR+3);
+  L.divTop=Math.min(L.divTop,L.pileLimit-2); // dividers reach pile surface
+  stackLayout();
+  makeBGLayer();
+  rebuildBinArrays();
+  dirty=true;
+}
+function cellIns(g,x,y,o){
+  const c=L.cell, k=((Math.floor(x/c)+1024)<<13)|(Math.floor(y/c)+1024);
+  let a=g.get(k); if(!a) g.set(k,a=[]); a.push(o);
+}
+function cellKey(cx,cy){ return ((cx+1024)<<13)|(cy+1024); }
+function rebuildBinArrays(){
+  counts=new Array(L.bins).fill(0);
+  pile=new Array(L.bins).fill(0);
+  binRows=Array.from({length:L.bins},()=>[]);
+  binVis=Array.from({length:L.bins},()=>[]);
+  binHit=new Float32Array(L.bins).fill(-9);
+  permCache.clear();
+  if(!parts) parts=Array.from({length:PMAX},()=>({a:false,x:0,y:0,vx:0,vy:0,l:0,L:1,c:'#fff',sz:1,up:false}));
+}
+function laneX(k){ return L.w/2+(k+0.5-(L.rows+1)/2)*L.S; }
+function binOfX(x){ return Math.max(0,Math.min(L.bins-1,Math.floor((x-L.binsLeft)/L.binW))); }
+
+/* ============ physics ============ */
+function spawnBall(){
+  if(spawned>=P.balls) return;
+  spawned++;
+  balls.push({
+    x:L.w/2+(Math.random()-0.5)*L.S*0.4, y:L.padTop-26+Math.random()*4,
+    vx:0, vy:P.speed, w:0, a:Math.random()*6.28, r:L.ballR, ci:spawned%6,
+    sup:false, tr:new Float32Array(24), th:0, tc:0,
+    idx:spawned, col:0, dec:1, px:0, py:0
+  });
+  const b=balls[balls.length-1]; b.px=b.x; b.py=b.y;
+}
+const FRIC=0.55; // contact friction coeff (rolling)
+function spawnP(x,y,vn,c,up){
+  if(pBudget<=0||balls.length>1400) return;
+  const n=Math.max(1,Math.min(5,1+(vn/160|0)));
+  pBudget-=n;
+  for(let i=0;i<n;i++){
+    let p=null;
+    for(let k=0;k<PMAX;k++){ const q=parts[pcur]; pcur=(pcur+1)%PMAX; if(!q.a){p=q;break;} }
+    if(!p) return;
+    const ang=up!==false ? -Math.PI/2+(Math.random()-0.5)*1.7
+                         : Math.random()*6.2832;
+    const sp=vn*(0.12+Math.random()*0.3);
+    p.a=true; p.x=x; p.y=y;
+    p.vx=Math.cos(ang)*sp; p.vy=Math.sin(ang)*sp;
+    p.L=p.l=0.22+Math.random()*0.3; p.c=c;
+    p.sz=L.ballR*(0.22+Math.random()*0.35);
+    p.up=up===true&&P.theme==='elemental';
+    lastFx=simClock;
+  }
+}
+function resolve(b,cx,cy,cr,pid){
+  let dx=b.x-cx, dy=b.y-cy, rr=b.r+cr, d2=dx*dx+dy*dy;
+  if(d2>=rr*rr||d2===0) return;
+  const d=Math.sqrt(d2), nx=dx/d, ny=dy/d;
+  b.x+=nx*(rr-d); b.y+=ny*(rr-d);
+  const vn=b.vx*nx+b.vy*ny;
+  const tx=-ny, ty=nx;
+  const isPin=cr<=L.pinR+0.5;
+  if(isPin){
+    // soft pins: a real impact is damped (no ricochet chaos); a ball
+    // cradled or sliding against the pin keeps its tangential motion
+    if(vn<-25){
+      const vr=-vn*P.rest, vt=(b.vx*tx+b.vy*ty)*0.4;
+      b.vx=nx*vr+tx*vt; b.vy=ny*vr+ty*vt;
+      b.w*=0.2;
+      if(ny<-0.2){ // symmetry-breaking kick at impact
+        const kick=(Math.random()+Math.random()+Math.random()-1.5)*P.jit*
+                   Math.min(200,Math.abs(vn)+30)*0.5;
+        b.vx+=kick*tx; b.vy+=kick*ty;
+      }
+      if(pid!==undefined){ pinHit[pid]=simClock; lastFx=simClock; }
+      if(vn<-110&&Math.random()<0.6)
+        spawnP(b.x-nx*b.r,b.y-ny*b.r,-vn,THEMES[P.theme].pin.stroke,false);
+    }else if(vn<0){ b.vx-=vn*nx; b.vy-=vn*ny; } // cradle: absorb normal only
+    if(ny<-0.2) b.sup=true;
+    return;
+  }
+  const vt=b.vx*tx+b.vy*ty;
+  const vtrel=vt-b.w*b.r; // slip velocity at contact point
+  let jn=0;
+  if(vn<0){
+    jn=-(1+P.rest)*vn; b.vx-=(1+P.rest)*vn*nx; b.vy-=(1+P.rest)*vn*ny;
+    if(vn<-260&&Math.random()<0.5)
+      spawnP(b.x-nx*b.r,b.y-ny*b.r,-vn,THEMES[P.theme].floorStroke,ny<-0.4);
+  }
+  jn+=P.grav*SUB*0.5; // sustained normal support vs gravity
+  if(ny<-0.2){ b.sup=true; b.pile=true; } // floor/pile/divider surface below
+  // Coulomb-bounded tangential impulse → rolling (I = 2/5 m r²)
+  let jt=-vtrel/3.5, lim=FRIC*jn;
+  if(jt>lim)jt=lim; else if(jt<-lim)jt=-lim;
+  b.vx+=jt*tx; b.vy+=jt*ty; b.w+=-2.5*jt/b.r;
+}
+function step(dt){
+  spawnAcc+=P.rate*dt;
+  while(spawnAcc>=1&&spawned<P.balls){ spawnAcc--; spawnBall(); }
+  const g=P.grav, rest=P.rest, cell=L.cell, dw=L.dw;
+  for(let bi=balls.length-1;bi>=0;bi--){
+    const b=balls[bi];
+    b.px=b.x; b.py=b.y;
+    b.vy+=g*dt; b.x+=b.vx*dt; b.y+=b.vy*dt; b.a+=b.w*dt;
+    b.sup=false; b.pile=false;
+    if(Math.abs(b.y-L.floorY)<L.cell) resolve(b,b.x,L.floorY+L.cell,L.cell); // floor
+    if(Math.abs(b.x-L.binsLeft)<L.cell) resolve(b,L.binsLeft-L.cell,b.y,L.cell); // left wall
+    if(Math.abs(b.x-L.binsRight)<L.cell) resolve(b,L.binsRight+L.cell,b.y,L.cell); // right wall
+    if(b.sup){ b.vx*=0.995; b.w*=0.99; } // rolling resistance → piles settle
+    const cx=Math.floor(b.x/cell), cy=Math.floor(b.y/cell);
+    for(let gx=cx-1;gx<=cx+1;gx++)for(let gy=cy-1;gy<=cy+1;gy++){
+      const arr=grid.get(cellKey(gx,gy)); if(!arr)continue;
+      for(let i=0;i<arr.length;i++){ const c=arr[i];
+        if(!c.dead) resolve(b,c.x,c.y,c.r,c.pid); }
+    }
+    if(b.y>L.pileLimit-b.r-3){ // dividers are solid only below pile surface
+      for(let j=1;j<L.bins;j++){
+        const xd=L.binsLeft+j*L.binW;
+        if(Math.abs(b.x-xd)<b.r+dw+2){
+          const cy=Math.max(L.pileLimit,Math.min(L.floorY,b.y));
+          resolve(b,xd,cy,dw);
+        }
+      }
+    }
+    // stochastic pin release: mid-gap lines, in free flight — each one
+    // is a fair Bernoulli step, aimed to graze the chosen flank of the
+    // next pin (grazing keeps landing scatter below one lane width)
+    while(b.dec<=L.rows && b.y>=L.padTop+b.dec*L.vs){
+      const j=b.dec;
+      const side=Math.random()<0.5?0:1;
+      b.col+=side;
+      // aim over a full row's fall time — never the collapsed "already at
+      // the line" window, that's what made balls snap sideways
+      const dy=Math.max((j<L.rows? L.padTop+(j+0.5)*L.vs : L.floorY)-b.y,
+                       L.vs*0.85);
+      const t=(-b.vy+Math.sqrt(b.vy*b.vy+2*g*dy))/g;
+      const flank=side?(L.ballR+L.pinR)*1.08:-(L.ballR+L.pinR)*1.08;
+      let xT=L.w/2+(b.col-j/2)*L.S+(j<L.rows?flank:0)
+             +(j<L.rows?(Math.random()-0.5)*Math.max(0,L.S-L.binW)*0.85:0);
+      xT=Math.max(L.binsLeft+b.r+1,Math.min(L.binsRight-b.r-1,xT));
+      if(j===L.rows){ // final flight: exact ballistic landing point,
+        b.landX=Math.max(L.binsLeft+b.r,Math.min(L.binsRight-b.r, // smeared ±S/2
+          xT+(Math.random()-0.5)*L.S));
+      }
+      b.vx=(xT-b.x)/Math.max(t,0.02);
+      const vcap=Math.max(640,L.S*40); // wide lanes need faster aiming
+      if(b.vx>vcap)b.vx=vcap; else if(b.vx<-vcap)b.vx=-vcap;
+      b.w=side?Math.min(20,b.vx/b.r*0.5):Math.max(-20,b.vx/b.r*0.5);
+      b.dec++;
+    }
+    // per-bin virtual floor at the current pile surface (capped so it
+    // never rises into the decision zone → every ball completes its
+    // full walk before settling)
+    const jb=binOfX(b.x), surf=Math.max(stackTop(jb)-L.ballR,L.pileLimit);
+    if(b.y>=surf){
+      if(b.vy>200&&Math.abs(b.vx)<18&&pile[jb]===0){
+        // vertical splash on bare floor only (can't hop across a lane)
+        b.y=surf; b.vy=-b.vy*P.rest; b.w*=0.5;
+      }else{ settle(b,bi); continue; }
+    }
+    const sp2=b.vx*b.vx+b.vy*b.vy;
+    if(b.sup&&sp2<300&&b.y>L.divTop&&b.dec>L.rows){ settle(b,bi); continue; }
+    if(b.y>L.h+60){ balls.splice(bi,1); continue; } // fell out somehow
+    if(sp2<400&&b.y<L.divTop){ // stuck in pin valley → micro-shake + pop
+      b.slow=(b.slow||0)+dt;
+      if(b.slow>0.3){
+        b.slow=0; b.stuck=(b.stuck||0)+1;
+        if(b.stuck>=3){ // hopeless orbit → re-drop fresh from the top
+          b.x=L.w/2+(Math.random()*2-1)*L.S*0.4;
+          b.y=L.padTop-24; b.vx=0; b.vy=P.speed;
+          b.tc=0; b.col=0; b.dec=1; b.px=b.x; b.py=b.y;
+        }else{
+          b.vx+=(Math.random()*2-1)*70;
+          b.vy-=30+Math.random()*60;
+        }
+      }
+    }else{ b.slow=0; if(b.y>L.divTop) b.stuck=0; }
+  }
+}
+let spawnAcc=0;
+
+/* ============ stats ============ */
+let lastStats=0;
+function pmfBinned(){
+  // exact B(rows,½) per lane, smeared uniformly over the lane width ±S/2,
+  // then integrated per bin (exact when bins=rows+1, sane when merged/extra)
+  const rows=L.rows, bins=L.bins, p=new Array(bins).fill(0);
+  let c=1, tot=Math.pow(2,rows);
+  for(let k=0;k<=rows;k++){
+    if(k>0) c=c*(rows-k+1)/k;
+    const pk=c/tot, lk=laneX(k), a=lk-L.S/2, b=lk+L.S/2;
+    const j0=Math.max(0,Math.floor((a-L.binsLeft)/L.binW));
+    const j1=Math.min(bins-1,Math.floor((b-L.binsLeft)/L.binW));
+    for(let j=j0;j<=j1;j++){
+      const e0=L.binsLeft+j*L.binW, e1=e0+L.binW;
+      const ov=Math.max(0,Math.min(b,e1)-Math.max(a,e0));
+      if(ov>0) p[j]+=pk*ov/L.S;
+    }
+  }
+  return p;
+}
+function computeStats(){
+  if(settledN<50) return null;
+  const pm=pmfBinned();
+  let mu0=0; for(let j=0;j<pm.length;j++) mu0+=j*pm[j];
+  let v0=0; for(let j=0;j<pm.length;j++) v0+=pm[j]*(j-mu0)*(j-mu0);
+  const sd0=Math.sqrt(v0);
+  // sample moments + KS input
+  const xs=[]; let mu=0;
+  const js=0.5*L.S/L.binW; // continuity jitter = landing scatter, in bin units
+  for(let j=0;j<L.bins;j++)
+    for(let i=0;i<counts[j];i++)
+      xs.push(j+((i*0.6180339887)%1)*2*js-js);
+  const n=xs.length;
+  for(const x of xs) mu+=x/n;
+  let m2=0,m3=0; for(const x of xs){const d=x-mu; m2+=d*d; m3+=d*d*d;}
+  m2/=n; m3/=n;
+  xs.sort((a,b)=>a-b);
+  const ks=ksNormal(xs,mu0,sd0);
+  // chi-square vs exact binned binomial
+  let chi=0,kEff=0;
+  for(let j=0;j<pm.length;j++){ const e=pm[j]*n;
+    if(e<0.5) continue; kEff++;
+    const o=counts[j]; chi+=(o-e)*(o-e)/e; }
+  const chiP=chiSquareP(chi,Math.max(1,kEff-1));
+  return {n,mu,sd:Math.sqrt(m2),skew:m3/Math.pow(m2,1.5),mu0,sd0,
+    ksD:ks.d,ksP:ks.p,chi,df:Math.max(1,kEff-1),chiP};
+}
+function fmt(p){ return p>=0.001?p.toFixed(3):p.toExponential(1); }
+function renderStats(){
+  const s=computeStats(), el=document.getElementById('stats'),
+        v=document.getElementById('verdict');
+  if(!s){ el.innerHTML=''; v.style.color=''; v.textContent='drop some balls…'; return; }
+  el.innerHTML=[
+    ['n (settled)',s.n],['mean',s.mu.toFixed(2)+' / theory '+s.mu0.toFixed(2)],
+    ['σ',s.sd.toFixed(2)+' / theory '+s0f(s)],['skew',s.skew.toFixed(3)],
+    ['KS  D',s.ksD.toFixed(4)],['KS  p',fmt(s.ksP)],
+    ['χ²',s.chi.toFixed(1)+'  (df '+s.df+')'],['χ² p',fmt(s.chiP)]
+  ].map(r=>`<div class="s"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
+  if(s.chiP<0.01){ v.textContent='PHYSICS ≠ BOARD THEORY ✗ (χ² p < .01)'; v.style.color='#ff5e5e'; }
+  else if(s.ksP<0.01){ v.textContent='BINOMIAL ✓ — NOT YET GAUSSIAN (KS p < .01: more rows, or bins = rows+1)'; v.style.color='#ffb347'; }
+  else if(s.ksP>=0.05&&s.chiP>=0.05){ v.textContent='BINOMIAL → GAUSSIAN ✓ (both p ≥ .05)'; v.style.color='var(--accent2)'; }
+  else { v.textContent='converging…'; v.style.color='var(--muted)'; }
+}
+function s0f(s){ return s.sd0.toFixed(2); }
+
+/* ============ drawing ============ */
+function stackLayout(){
+  const u=L.binW-2*L.ballR-1.3;
+  L.slotW=Math.max(0.1,u/Math.max(1,Math.floor(u/Math.max(L.ballR*2,0.2))));
+  L.stackK=Math.max(1,Math.floor(u/L.slotW));
+  L.rowH=Math.max(1.732*L.ballR,2.6); // hex contact: 2r·sin60 — balls touch
+  L.pileRows=Math.max(6,Math.floor((L.floorY-L.pileLimit)/L.rowH));
+  L.zs=1; L.rowHv=L.rowH; L.rowHvT=L.rowH; L.ballRv=L.ballR;
+}
+// binRows[j] = list of row codes (fill<<1)|parity — parity is baked into the
+// slot offsets of the row's balls, so it must travel with the row when the
+// pile scrolls, not be recomputed from a position
+function rowCap(tp){ return L.stackK<=1?1:(tp?L.stackK-1:L.stackK); }
+function rowHasSpace(j){ // can a ball be placed without exceeding pileRows?
+  const rws=binRows[j];
+  if(rws.length<L.pileRows) return true;
+  const c=rws[rws.length-1];
+  return (c>>1)<rowCap(c&1);
+}
+function rotateRows(){ // endless mode: bottom row of every bin scrolls off
+  for(let j=0;j<L.bins;j++){
+    const rws=binRows[j];
+    if(rws.length===0) continue;
+    const rm=rws[0]>>1; // balls in the bottom row (may be partial)
+    if(rm>0){
+      binVis[j].splice(0,rm);
+      for(const o of binVis[j]) o.t--; // rows shift down as one
+      pile[j]-=rm;
+    }
+    rws.shift();
+  }
+}
+function stackTop(j){ // next settling ball's contact height — pile is drawn
+  const rws=binRows[j]; // zoomed: physics surface tracks the compressed top
+  if(rws.length===0) return L.floorY;
+  const c=rws[rws.length-1];
+  const t=rws.length-1+((c>>1)>=rowCap(c&1)?1:0);
+  return Math.max(L.floorY-t*L.rowHvT,L.pileLimit+L.ballR+2);
+}
+const permCache=new Map();
+function rowSlotOrder(j,tp,n){
+  // stable random slot order per (bin, parity): the pile surface stays ragged
+  // and landX-driven, and the fill order survives endless-mode scrolling
+  const key=j*2+tp;
+  let perm=permCache.get(key);
+  if(!perm){
+    perm=new Uint8Array(n);
+    for(let i=0;i<n;i++) perm[i]=i;
+    let seed=(j*1103515245+tp*12345+12345)|0;
+    for(let i=n-1;i>0;i--){
+      seed=(seed*1103515245+12345)&0x7fffffff;
+      const t=(seed>>>7)%(i+1), tmp=perm[i]; perm[i]=perm[t]; perm[t]=tmp;
+    }
+    permCache.set(key,perm);
+  }
+  return perm;
+}
+function settle(b,bi){
+  const lx=b.landX!==undefined?b.landX:b.x;
+  const j=binOfX(lx);
+  balls.splice(bi,1);
+  counts[j]++; settledN++;
+  if(P.endless) while(!rowHasSpace(j)) rotateRows();
+  const rws=binRows[j];
+  let t=rws.length-1, tp;
+  if(t<0){t=0; tp=0; rws.push(0);} // first row: aligned, empty
+  else{
+    const c=rws[t]; tp=c&1;
+    if((c>>1)>=rowCap(tp)){tp=tp^1; t++; rws.push(tp);}
+  }
+  const nSlot=rowCap(tp), fill=rws[t]>>1;
+  rws[t]+=2; pile[j]++;
+  const perm=rowSlotOrder(j,tp,nSlot);        // histogram shows it
+  const ir=perm[Math.min(fill,nSlot-1)];
+  const dx=L.ballR+0.65+L.slotW*(ir+0.5)+(tp?L.slotW/2:0);
+  binVis[j].push({x:L.binsLeft+j*L.binW+dx, y:L.floorY-L.ballRv-t*L.rowHv,
+    t,dx,r:b.r,ci:b.ci,a:Math.random()*6.28,idx:b.idx,
+    x0:b.x, y0:b.y, t0:simClock});
+  binHit[j]=simClock; lastFx=simClock;
+  statsDirty=true;
+}
+let bgLayer=null;
+function makeBGLayer(){
+  if(!L.w) return;
+  const t=THEMES[P.theme];
+  bgLayer=document.createElement('canvas');
+  const dpr=cv.width/L.w;
+  bgLayer.width=cv.width; bgLayer.height=cv.height;
+  const g=bgLayer.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0);
+  const grad=g.createLinearGradient(0,0,L.w*0.4,L.h);
+  grad.addColorStop(0,t.css['--bg']); grad.addColorStop(1,t.css['--bg2']);
+  g.fillStyle=grad; g.fillRect(0,0,L.w,L.h);
+  if(P.theme==='wood'){ g.strokeStyle='rgba(0,0,0,.12)'; g.lineWidth=1;
+    for(let y=0;y<L.h;y+=7){ g.beginPath();
+      for(let x=0;x<=L.w;x+=40) g.lineTo(x,y+Math.sin(x*0.05+y)*2);
+      g.stroke(); } }
+  if(P.theme==='vaporwave'){ // sun + perspective grid above horizon
+    const hy=L.h*0.30, vx=L.w/2;
+    const sun=g.createLinearGradient(0,hy-90,0,hy);
+    sun.addColorStop(0,'#ffd23f'); sun.addColorStop(1,'#ff2079');
+    g.save(); g.beginPath(); g.arc(vx,hy-8,70,Math.PI,0); g.clip();
+    g.fillStyle=sun; g.fillRect(vx-70,hy-90,140,82); g.restore();
+    g.strokeStyle='rgba(255,32,121,.35)';
+    for(let i=-14;i<=14;i++){ g.beginPath(); g.moveTo(vx+i*14,hy);
+      g.lineTo(vx+i*L.w/6,L.h); g.stroke(); }
+    for(let i=1;i<9;i++){ const y=hy+ (L.h-hy)*Math.pow(i/9,2.2);
+      g.beginPath(); g.moveTo(0,y); g.lineTo(L.w,y); g.stroke(); } }
+  if(P.theme==='metal'){ g.fillStyle='rgba(255,255,255,.02)';
+    for(let y=0;y<L.h;y+=3) g.fillRect(0,y,L.w,1); }
+  // pins
+  for(const p of pins) drawPin(g,p.x,p.y,t);
+  // drop funnel marker
+  const fx=L.w/2, fy=L.padTop-27;
+  g.save(); g.strokeStyle=t.pin.stroke; g.lineWidth=1.6; g.globalAlpha=0.85;
+  if(t.glow){ g.shadowColor=t.pin.stroke; g.shadowBlur=6; }
+  g.beginPath();
+  g.moveTo(fx-13,fy-16); g.lineTo(fx-4,fy-2);
+  g.moveTo(fx+13,fy-16); g.lineTo(fx+4,fy-2);
+  g.stroke(); g.restore();
+  bakeSprites();
+}
+let SPR=null;
+function bakeSprites(){
+  if(!L.ballR) return;
+  const t=THEMES[P.theme], dpr=cv.width/L.w, R=L.ballR;
+  SPR=t.pal.map((c,ci)=>{
+    const pad=t.glow?R*2.2:R*0.2+1;
+    const el=document.createElement('canvas');
+    el.width=el.height=Math.max(2,Math.ceil((R+pad)*2*dpr));
+    const g=el.getContext('2d');
+    g.setTransform(dpr,0,0,dpr,0,0);
+    paintBall(g,R+pad,R+pad,R,c,t,ci);
+    return {img:el,half:R+pad};
+  });
+}
+function drawPin(g,x,y,t){
+  const r=L.pinR;
+  g.save();
+  if(t.glow){ g.shadowColor=t.pin.stroke; g.shadowBlur=r*2.4; }
+  if(P.theme==='gems'){
+    g.translate(x,y); g.rotate(Math.PI/4);
+    const gr=g.createLinearGradient(-r,-r,r,r);
+    gr.addColorStop(0,t.pin.hi); gr.addColorStop(1,t.pin.lo);
+    g.fillStyle=gr; g.fillRect(-r,-r,2*r,2*r);
+    g.strokeStyle=t.pin.stroke; g.lineWidth=1; g.strokeRect(-r,-r,2*r,2*r);
+    g.beginPath(); g.moveTo(-r,0); g.lineTo(r,0); g.moveTo(0,-r); g.lineTo(0,r);
+    g.strokeStyle='rgba(255,255,255,.35)'; g.stroke();
+  }else{
+    const gr=g.createRadialGradient(x-r*0.35,y-r*0.4,r*0.15,x,y,r);
+    gr.addColorStop(0,t.pin.hi); gr.addColorStop(1,t.pin.lo);
+    g.fillStyle=gr; g.beginPath(); g.arc(x,y,r,0,7); g.fill();
+    if(P.theme==='metal'){ g.strokeStyle=t.pin.stroke; g.lineWidth=0.8; g.stroke(); }
+  }
+  g.restore();
+}
+function paintBall(g,x,y,r,c,t,ci){
+  g.save();
+  if(t.glow){ g.shadowColor=c; g.shadowBlur=r*(P.theme==='elemental'?2.2:1.8); }
+  if(P.theme==='metal'){
+    const gr=g.createRadialGradient(x-r*0.4,y-r*0.45,r*0.1,x,y,r);
+    gr.addColorStop(0,'#ffffff'); gr.addColorStop(0.35,c); gr.addColorStop(1,'#333a41');
+    g.fillStyle=gr;
+  }else if(P.theme==='neon'||P.theme==='vaporwave'){
+    g.fillStyle=c;
+  }else if(P.theme==='gems'){
+    const gr=g.createLinearGradient(x-r,y-r,x+r,y+r);
+    gr.addColorStop(0,'#ffffff'); gr.addColorStop(0.25,c); gr.addColorStop(1,c);
+    g.fillStyle=gr;
+    g.beginPath(); g.arc(x,y,r,0,7); g.fill();
+    g.shadowBlur=0; g.fillStyle='rgba(255,255,255,.85)';
+    g.beginPath(); g.moveTo(x,y-r*0.5); g.lineTo(x+r*0.28,y); g.lineTo(x,y+r*0.5);
+    g.lineTo(x-r*0.28,y); g.closePath(); g.fill(); g.restore(); return;
+  }else if(P.theme==='elemental'){
+    const gr=g.createRadialGradient(x,y-r*0.2,r*0.1,x,y,r);
+    gr.addColorStop(0,'#fff7d6'); gr.addColorStop(0.5,c); gr.addColorStop(1,'#7a1f0a');
+    g.fillStyle=gr;
+  }else{ // wood sphere
+    const gr=g.createRadialGradient(x-r*0.35,y-r*0.35,r*0.1,x,y,r);
+    gr.addColorStop(0,'#ffffffcc'); gr.addColorStop(0.3,c); gr.addColorStop(1,'rgba(0,0,0,.55)');
+    g.fillStyle=gr;
+  }
+  g.beginPath(); g.arc(x,y,r,0,7); g.fill();
+  g.restore();
+}
+function drawSpr(spr,x,y,flick){
+  if(flick){
+    const k=1+0.09*flick;
+    ctx.globalAlpha=0.8+0.2*flick;
+    ctx.drawImage(spr.img,x-spr.half*k,y-spr.half*k,spr.half*2*k,spr.half*2*k);
+    ctx.globalAlpha=1;
+  }else ctx.drawImage(spr.img,x-spr.half,y-spr.half,spr.half*2,spr.half*2);
+}
+function drawSprSized(spr,x,y,zs){
+  const s=Math.max(0.16,spr.half*zs);
+  ctx.drawImage(spr.img,x-s,y-s,s*2,s*2);
+}
+let fontCache='', lastPM=null;
+function trailsOn(){ const t=THEMES[P.theme];
+  return P.trails==='on'||(P.trails==='auto'&&!!t.trails); }
+function draw(time,alpha){
+  if(alpha===undefined) alpha=1;
+  const t=THEMES[P.theme];
+  ctx.drawImage(bgLayer,0,0,L.w,L.h);
+  // histogram ghost bars + expected outline + gaussian curve
+  let histN=settledN;
+  lastPM=null;
+  if(histN>0){
+    const pm=pmfBinned(); lastPM=pm; let maxE=0;
+    for(let j=0;j<L.bins;j++) maxE=Math.max(maxE,pm[j]*histN);
+    const maxO=Math.max(...counts,1);
+    const sc=(L.floorY-L.histTop)*0.92/Math.max(maxE,maxO);
+    ctx.save();
+    ctx.fillStyle=t.hist;
+    for(let j=0;j<L.bins;j++){
+      const hO=counts[j]*sc; if(hO>0.5)
+        ctx.fillRect(L.binsLeft+j*L.binW+1,L.floorY-hO,L.binW-2,hO);
+    }
+    ctx.strokeStyle=t.exp; ctx.globalAlpha=0.75; ctx.lineWidth=1.2;
+    for(let j=0;j<L.bins;j++){
+      const hE=pm[j]*histN*sc;
+      ctx.strokeRect(L.binsLeft+j*L.binW+1,L.floorY-hE,L.binW-2,hE);
+    }
+    ctx.globalAlpha=1;
+    ctx.beginPath();
+    const muC=(L.bins-1)/2, sdC=Math.max(0.35,Math.sqrt(histVariance()));
+    for(let xj=-0.5;xj<=L.bins-0.25;xj+=0.2){
+      const y=L.floorY-normPdf(xj,muC,sdC)*histN*sc,
+            px=L.binsLeft+(xj+0.5)*L.binW;
+      if(xj<0)ctx.moveTo(px,y); else ctx.lineTo(px,y);
+    }
+    ctx.strokeStyle=t.curve;
+    ctx.lineWidth=5; ctx.globalAlpha=0.15; ctx.stroke(); // soft glow underlay
+    ctx.lineWidth=1.6; ctx.globalAlpha=1; ctx.stroke();
+    ctx.restore();
+  }
+  // trails v2: frame-sampled ring buffer, 3 tapered alpha bands, additive
+  if(trailsOn()){
+    const TN=12;
+    ctx.save();
+    if(t.glow) ctx.globalCompositeOperation='lighter';
+    ctx.lineCap='round';
+    for(const b of balls){
+      const rx=b.px+(b.x-b.px)*alpha, ry=b.py+(b.y-b.py)*alpha;
+      if(!paused){
+        if(b.tc>0){
+          const hi2=((b.th-1+TN)%TN)*2, jx=rx-b.tr[hi2], jy=ry-b.tr[hi2+1];
+          if(jx*jx+jy*jy>L.S*L.S*2.25) b.tc=0; // respawn/teleport seam
+        }
+        b.tr[b.th*2]=rx; b.tr[b.th*2+1]=ry;
+        b.th=(b.th+1)%TN; if(b.tc<TN)b.tc++;
+      }
+      if(b.tc<3) continue;
+      ctx.strokeStyle=t.pal[b.ci%t.pal.length];
+      const base=t.glow?0.16:0.10, gsz=b.tc/3;
+      for(let gi=0;gi<3;gi++){
+        const s0=(gi*gsz)|0, s1=Math.min(b.tc,((gi+1)*gsz)|0);
+        if(s1-s0<2) continue;
+        const k=(gi+1)/3;
+        ctx.globalAlpha=base*k;
+        ctx.lineWidth=Math.max(0.6,b.r*(0.3+0.9*k));
+        ctx.beginPath();
+        const i0=(b.th-b.tc+s0+TN)%TN;
+        ctx.moveTo(b.tr[i0*2],b.tr[i0*2+1]);
+        for(let i=s0+1;i<s1;i++){
+          const ii=(b.th-b.tc+i+TN)%TN;
+          ctx.lineTo(b.tr[ii*2],b.tr[ii*2+1]);
+        }
+        ctx.stroke();
+      }
+      ctx.globalAlpha=1;
+    }
+    ctx.restore();
+  }
+  // pin hit pulses
+  if(pinHit){
+    const pk=0.16;
+    ctx.save(); ctx.lineWidth=1.2; ctx.strokeStyle=t.pin.stroke;
+    for(let i=0;i<pins.length;i++){
+      const age=simClock-pinHit[i];
+      if(age<0||age>=pk) continue;
+      const k=1-age/pk;
+      ctx.globalAlpha=k*0.85;
+      ctx.beginPath(); ctx.arc(pins[i].x,pins[i].y,L.pinR*(1+2.2*(1-k)),0,7); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // settled balls — positions recomputed each frame from (row, slot): the bin
+  // chamber is zoomed (L.zs) so the tallest pile always fits the area
+  if(SPR) for(let j=0;j<L.bins;j++)
+    for(const o of binVis[j]){
+      o.x=L.binsLeft+j*L.binW+o.dx;
+      o.y=L.floorY-L.ballRv-o.t*L.rowHv;
+      const age=simClock-o.t0;
+      if(age>=0&&age<0.06){
+        const u=age/0.06, e=1-(1-u)*(1-u);
+        drawSprSized(SPR[o.ci%SPR.length],o.x0+(o.x-o.x0)*e,o.y0+(o.y-o.y0)*e,L.zs);
+      }else drawSprSized(SPR[o.ci%SPR.length],o.x,o.y,L.zs);
+    }
+  // active balls at interpolated positions
+  if(SPR) for(const b of balls){
+    const rx=b.px+(b.x-b.px)*alpha, ry=b.py+(b.y-b.py)*alpha;
+    const fl=P.theme==='elemental' ? 0.5+0.5*Math.sin(time*7+b.idx) : 0;
+    drawSpr(SPR[b.ci%SPR.length],rx,ry,fl);
+  }
+  // impact particles
+  if(parts){
+    ctx.save();
+    if(t.glow) ctx.globalCompositeOperation='lighter';
+    for(let i=0;i<PMAX;i++){ const p=parts[i]; if(!p.a) continue;
+      ctx.globalAlpha=Math.max(0,p.l/p.L)*0.9;
+      ctx.fillStyle=p.c;
+      ctx.beginPath(); ctx.arc(p.x,p.y,p.sz,0,7); ctx.fill(); }
+    ctx.restore();
+  }
+  // bin landing edge flash
+  if(binHit){
+    ctx.save(); ctx.fillStyle=t.div;
+    for(let j=0;j<L.bins;j++){
+      const age=simClock-binHit[j];
+      if(age<0||age>=0.32) continue;
+      ctx.globalAlpha=0.13*(1-age/0.32);
+      ctx.fillRect(L.binsLeft+j*L.binW+1,L.divTop,L.binW-2,L.floorY-L.divTop);
+    }
+    ctx.restore();
+  }
+  // dividers + floor
+  ctx.save();
+  ctx.strokeStyle=t.div; ctx.lineWidth=Math.max(1.2,L.dw*2);
+  if(t.glow){ ctx.shadowColor=t.div; ctx.shadowBlur=6; }
+  for(let j=1;j<L.bins;j++){
+    const xd=L.binsLeft+j*L.binW;
+    ctx.beginPath(); ctx.moveTo(xd,L.divTop); ctx.lineTo(xd,L.floorY); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.moveTo(L.binsLeft-2,L.floorY); ctx.lineTo(L.binsRight+2,L.floorY); ctx.stroke();
+  ctx.strokeStyle=t.floorStroke; ctx.globalAlpha=0.8;
+  ctx.beginPath(); ctx.moveTo(L.binsLeft-2,L.divTop); ctx.lineTo(L.binsLeft-2,L.floorY);
+  ctx.moveTo(L.binsRight+2,L.divTop); ctx.lineTo(L.binsRight+2,L.floorY); ctx.stroke();
+  ctx.restore();
+  ctx.fillStyle=t.floor;
+  ctx.fillRect(0,L.floorY+1.5,L.w,L.h-L.floorY);
+  // counts (with pop bounce on landing)
+  if(L.binW>=16){
+    if(!fontCache) fontCache=getComputedStyle(document.body).fontFamily;
+    ctx.fillStyle=t.label; ctx.textAlign='center';
+    for(let j=0;j<L.bins;j++){ if(!counts[j]) continue;
+      let fs=Math.min(11,L.binW*0.55);
+      const age=simClock-binHit[j];
+      if(age>=0&&age<0.22) fs*=1+0.45*(1-age/0.22);
+      ctx.font=`${fs.toFixed(1)}px ${fontCache}`;
+      ctx.fillText(counts[j],L.binsLeft+(j+0.5)*L.binW,L.floorY+16);
+    }
+  }
+}
+function histVariance(){ // fitted sd of sample in bin units (for curve)
+  let n=0,mu=0; for(let j=0;j<L.bins;j++){n+=counts[j]; mu+=j*counts[j];}
+  if(n<2) return 1; mu/=n; let v=0;
+  for(let j=0;j<L.bins;j++) v+=counts[j]*(j-mu)*(j-mu);
+  return Math.max(0.05,v/n);
+}
+
+/* ============ main loop ============ */
+const SUB=1/240;
+let last=0, fpsAcc=0, fpsN=0, fpsT=0, lowT=0, physAcc=0;
+function frame(ts){
+  const dt=Math.min(0.033,(ts-last)/1000)||0.016; last=ts;
+  fpsAcc+=1/dt; fpsN++;
+  if(ts-fpsT>500){
+    const f=Math.round(fpsAcc/fpsN);
+    document.getElementById('hFps').textContent=f;
+    if(f<45&&QUAL>1){ lowT+=0.5; if(lowT>=2){ QUAL=1; lowT=0; layout(); } }
+    else lowT=0;
+    fpsAcc=0;fpsN=0;fpsT=ts;
+  }
+  const sdt=dt*(P.slow?0.25:1);
+  // bin chamber zoom: shrink until the tallest pile fits the pile area
+  let mr=1; for(let j=0;j<L.bins;j++) if(binRows[j].length>mr) mr=binRows[j].length;
+  const zt=Math.min(1,(L.floorY-L.pileLimit-4)/(mr*L.rowH+L.ballR));
+  L.rowHvT=L.rowH*zt; // physics follows the target zoom immediately
+  L.zs+=(zt-L.zs)*Math.min(1,sdt*3); // drawing eases to it
+  L.rowHv=L.rowH*L.zs; L.ballRv=L.ballR*L.zs;
+  if(!paused){
+    simClock+=sdt;
+    pBudget=balls.length>800?12:(QUAL>1?30:14);
+    physAcc+=sdt; let n=0;
+    while(physAcc>=SUB&&n<16){ step(SUB); physAcc-=SUB; n++; }
+    if(n>=16) physAcc=0; // spiral-of-death guard
+    if(parts) for(let i=0;i<PMAX;i++){ const p=parts[i]; if(!p.a) continue;
+      p.vy+=(p.up?-240:P.grav*0.4)*sdt;
+      p.vx*=1-2.4*sdt; p.vy*=1-1.6*sdt;
+      p.x+=p.vx*sdt; p.y+=p.vy*sdt;
+      p.l-=sdt; if(p.l<=0) p.a=false; }
+  }
+  // idle skip: paused, nothing moving, no fresh fx → hold last frame
+  if(!paused||balls.length||simClock-lastFx<0.6||dirty){
+    dirty=false;
+    draw(simClock,paused?1:physAcc/SUB);
+  }
+  document.getElementById('hAct').textContent=balls.length;
+  document.getElementById('hSet').textContent=settledN+' / '+P.balls;
+  document.getElementById('hDone').textContent=
+    (spawned>=P.balls&&balls.length===0&&settledN>0)?'— complete':'';
+  if(statsDirty&&ts-lastStats>400){ lastStats=ts; statsDirty=false; renderStats(); }
+  requestAnimationFrame(frame);
+}
+
+/* ============ UI ============ */
+const SL=['rows','bins','balls','rate','speed','grav','rest','jit'];
+function syncUI(){
+  document.getElementById('bins').disabled=P.binsync;
+  document.getElementById('r_bins').classList.toggle('off',P.binsync);
+  for(const k of SL){
+    const el=document.getElementById(k); el.value=P[k];
+    document.getElementById('o_'+k).textContent=P[k];
+  }
+  document.getElementById('binsync').checked=P.binsync;
+  document.getElementById('endless').checked=P.endless;
+  document.getElementById('slow').checked=P.slow;
+  document.getElementById('trails').value=P.trails;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.dataset.t===P.theme));
+}
+function applyTheme(){
+  const t=THEMES[P.theme];
+  for(const[k,v]of Object.entries(t.css)) document.documentElement.style.setProperty(k,v);
+  fontCache='';
+  makeBGLayer();
+  dirty=true;
+}
+function reset(){
+  balls=[]; grid=new Map(); rebuildBinArrays();
+  for(const p of pins) cellIns(grid,p.x,p.y,{stat:true,x:p.x,y:p.y,r:L.pinR,dead:false,pid:pins.indexOf(p)});
+  if(parts) for(const p of parts) p.a=false;
+  lastFx=-9; dirty=true;
+  spawned=0; settledN=0; spawnAcc=0; statsDirty=true;
+}
+function structural(){ layout(); reset(); }
+for(const k of SL){
+  const el=document.getElementById(k);
+  el.addEventListener('input',()=>{
+    P[k]=+el.value;
+    document.getElementById('o_'+k).textContent=el.value;
+    if(k==='rows'&&P.binsync){ P.bins=Math.min(48,P.rows+1); }
+    if(k==='rows'||k==='bins') structural(); else writeHash();
+    syncUI(); writeHash();
+  });
+}
+document.getElementById('binsync').addEventListener('change',e=>{
+  P.binsync=e.target.checked;
+  if(P.binsync) P.bins=Math.min(48,P.rows+1);
+  structural(); syncUI(); writeHash();
+});
+document.getElementById('slow').addEventListener('change',e=>{P.slow=e.target.checked; writeHash();});
+document.getElementById('endless').addEventListener('change',e=>{
+  P.endless=e.target.checked; reset(); syncUI(); writeHash();
+});
+document.getElementById('trails').addEventListener('change',e=>{P.trails=e.target.value; dirty=true; writeHash();});
+// bin hover tooltip
+const tip=document.getElementById('tip');
+cv.addEventListener('mousemove',e=>{
+  const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+  if(my>L.divTop-230&&my<=L.floorY&&mx>=L.binsLeft&&mx<=L.binsRight){
+    const j=binOfX(mx), n=counts[j], tot=settledN||1;
+    const e1=lastPM?lastPM[j]*settledN:0;
+    tip.innerHTML=`<b>bin ${j+1}</b> · ${n} (${(100*n/tot).toFixed(1)}%)<br>expected ${e1.toFixed(1)}`;
+    tip.style.display='block';
+    tip.style.left=Math.max(4,Math.min(mx+14,r.width-(tip.offsetWidth||130)-6))+'px';
+    tip.style.top=Math.max(4,Math.min(my+12,r.height-(tip.offsetHeight||40)-6))+'px';
+  }else tip.style.display='none';
+});
+cv.addEventListener('mouseleave',()=>{tip.style.display='none';});
+document.getElementById('bPlay').addEventListener('click',e=>{
+  paused=!paused; e.target.textContent=paused?'▶ PLAY':'⏸ PAUSE';
+});
+document.getElementById('bReset').addEventListener('click',()=>{reset();});
+document.getElementById('bBurst').addEventListener('click',()=>{
+  let k=0; while(k<100&&spawned<P.balls){spawnBall();k++;}
+});
+document.getElementById('bShare').addEventListener('click',()=>{
+  writeHash();
+  navigator.clipboard.writeText(location.href).then(()=>toast('link copied — settings travel in the URL'),
+    ()=>toast(location.href));
+});
+function toast(m){
+  const el=document.getElementById('toast'); el.textContent=m; el.style.opacity=1;
+  clearTimeout(el._t); el._t=setTimeout(()=>el.style.opacity=0,2200);
+}
+// theme chips
+const chips=document.getElementById('chips');
+for(const name of Object.keys(THEMES)){
+  const b=document.createElement('button');
+  b.className='chip'; b.dataset.t=name; b.textContent=name.toUpperCase();
+  b.title=name+' theme';
+  b.addEventListener('click',()=>{ P.theme=name; applyTheme(); syncUI(); writeHash(); });
+  chips.appendChild(b);
+}
+document.getElementById('statNote').innerHTML=
+  'Free flight, pin grazing, floor &amp; divider impacts, restitution and piles are integrated physically; '+
+  'each pin row applies a stochastic release (surface-roughness model): one fair ±1-lane Bernoulli step, '+
+  'after which the ball flies ballistically to a grazed lane. χ² validates the settled counts against the exact '+
+  'binned B(rows,&frac12) pmf; KS tests gaussianity vs N(μ₀,σ₀) with continuity jitter. '+
+  'Few rows &rarr; binomial is real but far from normal &mdash; watch χ² stay green while KS turns amber. Share settings via URL.';
+
+/* ============ hash ============ */
+let hashT=0;
+function writeHash(){
+  clearTimeout(hashT);
+  hashT=setTimeout(()=>{
+    const q=new URLSearchParams();
+    q.set('theme',P.theme); q.set('rows',P.rows); q.set('binsync',P.binsync?1:0);
+    q.set('bins',P.bins); q.set('balls',P.balls); q.set('rate',P.rate);
+    q.set('speed',P.speed); q.set('grav',P.grav); q.set('rest',P.rest);
+    q.set('jit',P.jit); q.set('slow',P.slow?1:0); q.set('auto',paused?0:1);
+    q.set('trails',P.trails); q.set('endless',P.endless?1:0);
+    history.replaceState(null,'','#'+q.toString());
+  },250);
+}
+function readHash(){
+  if(!location.hash) return;
+  const q=new URLSearchParams(location.hash.slice(1));
+  const num=k=>q.has(k)?+q.get(k):null;
+  if(q.get('theme')&&THEMES[q.get('theme')]) P.theme=q.get('theme');
+  const r=num('rows'); if(r>=2&&r<=40)P.rows=r;
+  if(q.has('binsync'))P.binsync=q.get('binsync')==='1';
+  const b=num('bins');
+  if(b!==null&&b>=2&&b<=48){P.bins=b; if(q.get('binsync')!=='1')P.binsync=false;}
+  for(const k of ['balls','rate','speed','grav','rest','jit']){
+    const el=document.getElementById(k);
+    const v=num(k);
+    if(v!==null&&v>=+el.min&&v<=+el.max) P[k]=v;
+  }
+  if(q.has('slow'))P.slow=q.get('slow')==='1';
+  if(q.has('auto'))P.auto=q.get('auto')==='1';
+  if(['auto','on','off'].includes(q.get('trails')))P.trails=q.get('trails');
+  if(q.has('endless'))P.endless=q.get('endless')==='1';
+  if(P.binsync)P.bins=Math.min(48,P.rows+1);
+}
+
+/* ============ boot ============ */
+let rsT=0;
+window.addEventListener('resize',()=>{clearTimeout(rsT);rsT=setTimeout(()=>{structural();},150);});
+readHash(); applyTheme(); syncUI(); layout(); reset(); writeHash();
+paused=!P.auto;
+document.getElementById('bPlay').textContent=paused?'▶ PLAY':'⏸ PAUSE';
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
