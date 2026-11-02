@@ -258,11 +258,21 @@ let balls=[], counts=[], binVis=[], settledN=0;
 let pile=[], binRows=[]; // per-bin visible count + row codes
 let grid=new Map(), pins=[], statsDirty=false;
 let pinHit=null, binHit=null, lastFx=-9, simClock=0, dirty=true;
+let binVisDirty=true, pmCache=null;
 const PMAX=640; let parts=null, pcur=0, pBudget=30;
 
 /* ============ layout ============ */
 const cv=document.getElementById('cv'), ctx=cv.getContext('2d',{alpha:false});
 const stage=document.getElementById('stage');
+const DOM={
+  hFps:document.getElementById('hFps'),
+  hAct:document.getElementById('hAct'),
+  hSet:document.getElementById('hSet'),
+  hDone:document.getElementById('hDone'),
+  stats:document.getElementById('stats'),
+  verdict:document.getElementById('verdict'),
+  toast:document.getElementById('toast')
+};
 let L={}, QUAL=Math.min(2,window.devicePixelRatio||1);
 function layout(){
   const dpr=QUAL;
@@ -283,13 +293,12 @@ function layout(){
     binsLeft,binsRight:binsLeft+binsWidth,
     divTop:floorY-Math.max(34,h*0.15), histTop:h*0.34,
     cell:Math.max(15,S,binW)};
-  pins=[]; grid=new Map();
+  pins=[]; // pins carry their own id; reset() builds the spatial grid
   for(let r=0;r<rows;r++){
     const y=padTop+(r+0.5)*vs;
     for(let i=0;i<=r;i++){
       const x=w/2+(i-r/2)*S;
-      const pid=pins.length;
-      pins.push({x,y}); cellIns(grid,x,y,{stat:true,x,y,r:L.pinR,dead:false,pid});
+      pins.push({x,y,pid:pins.length});
     }
   }
   pinHit=new Float32Array(pins.length).fill(-9);
@@ -297,8 +306,9 @@ function layout(){
                       padTop+rows*vs+ballR+3);
   L.divTop=Math.min(L.divTop,L.pileLimit-2); // dividers reach pile surface
   stackLayout();
+  syncZoom(true);
   makeBGLayer();
-  rebuildBinArrays();
+  pmCache=null;
   dirty=true;
 }
 function cellIns(g,x,y,o){
@@ -313,6 +323,8 @@ function rebuildBinArrays(){
   binVis=Array.from({length:L.bins},()=>[]);
   binHit=new Float32Array(L.bins).fill(-9);
   permCache.clear();
+  binVisDirty=true;
+  pmCache=null;
   if(!parts) parts=Array.from({length:PMAX},()=>({a:false,x:0,y:0,vx:0,vy:0,l:0,L:1,c:'#fff',sz:1,up:false}));
 }
 function laneX(k){ return L.w/2+(k+0.5-(L.rows+1)/2)*L.S; }
@@ -324,7 +336,7 @@ function spawnBall(){
   spawned++;
   balls.push({
     x:L.w/2+(Math.random()-0.5)*L.S*0.4, y:L.padTop-26+Math.random()*4,
-    vx:0, vy:P.speed, w:0, a:Math.random()*6.28, r:L.ballR, ci:spawned%6,
+    vx:0, vy:P.speed, w:0, r:L.ballR, ci:spawned%6,
     sup:false, tr:new Float32Array(24), th:0, tc:0,
     idx:spawned, col:0, dec:1, px:0, py:0
   });
@@ -334,6 +346,7 @@ const FRIC=0.55; // contact friction coeff (rolling)
 function spawnP(x,y,vn,c,up){
   if(pBudget<=0||balls.length>1400) return;
   const n=Math.max(1,Math.min(5,1+(vn/160|0)));
+  if(n>pBudget) return;
   pBudget-=n;
   for(let i=0;i<n;i++){
     let p=null;
@@ -350,14 +363,13 @@ function spawnP(x,y,vn,c,up){
     lastFx=simClock;
   }
 }
-function resolve(b,cx,cy,cr,pid){
+function resolve(b,cx,cy,cr,isPin,pid){
   let dx=b.x-cx, dy=b.y-cy, rr=b.r+cr, d2=dx*dx+dy*dy;
   if(d2>=rr*rr||d2===0) return;
   const d=Math.sqrt(d2), nx=dx/d, ny=dy/d;
   b.x+=nx*(rr-d); b.y+=ny*(rr-d);
   const vn=b.vx*nx+b.vy*ny;
   const tx=-ny, ty=nx;
-  const isPin=cr<=L.pinR+0.5;
   if(isPin){
     // soft pins: a real impact is damped (no ricochet chaos); a ball
     // cradled or sliding against the pin keeps its tangential motion
@@ -386,7 +398,7 @@ function resolve(b,cx,cy,cr,pid){
       spawnP(b.x-nx*b.r,b.y-ny*b.r,-vn,THEMES[P.theme].floorStroke,ny<-0.4);
   }
   jn+=P.grav*SUB*0.5; // sustained normal support vs gravity
-  if(ny<-0.2){ b.sup=true; b.pile=true; } // floor/pile/divider surface below
+  if(ny<-0.2){ b.sup=true; } // floor/pile/divider surface below
   // Coulomb-bounded tangential impulse → rolling (I = 2/5 m r²)
   let jt=-vtrel/3.5, lim=FRIC*jn;
   if(jt>lim)jt=lim; else if(jt<-lim)jt=-lim;
@@ -399,24 +411,26 @@ function step(dt){
   for(let bi=balls.length-1;bi>=0;bi--){
     const b=balls[bi];
     b.px=b.x; b.py=b.y;
-    b.vy+=g*dt; b.x+=b.vx*dt; b.y+=b.vy*dt; b.a+=b.w*dt;
-    b.sup=false; b.pile=false;
-    if(Math.abs(b.y-L.floorY)<L.cell) resolve(b,b.x,L.floorY+L.cell,L.cell); // floor
-    if(Math.abs(b.x-L.binsLeft)<L.cell) resolve(b,L.binsLeft-L.cell,b.y,L.cell); // left wall
-    if(Math.abs(b.x-L.binsRight)<L.cell) resolve(b,L.binsRight+L.cell,b.y,L.cell); // right wall
+    b.vy+=g*dt; b.x+=b.vx*dt; b.y+=b.vy*dt;
+    b.sup=false;
+    if(Math.abs(b.y-L.floorY)<L.cell) resolve(b,b.x,L.floorY+L.cell,L.cell,false); // floor
+    if(Math.abs(b.x-L.binsLeft)<L.cell) resolve(b,L.binsLeft-L.cell,b.y,L.cell,false); // left wall
+    if(Math.abs(b.x-L.binsRight)<L.cell) resolve(b,L.binsRight+L.cell,b.y,L.cell,false); // right wall
     if(b.sup){ b.vx*=0.995; b.w*=0.99; } // rolling resistance → piles settle
     const cx=Math.floor(b.x/cell), cy=Math.floor(b.y/cell);
     for(let gx=cx-1;gx<=cx+1;gx++)for(let gy=cy-1;gy<=cy+1;gy++){
       const arr=grid.get(cellKey(gx,gy)); if(!arr)continue;
       for(let i=0;i<arr.length;i++){ const c=arr[i];
-        if(!c.dead) resolve(b,c.x,c.y,c.r,c.pid); }
+        resolve(b,c.x,c.y,c.r,true,c.pid); }
     }
     if(b.y>L.pileLimit-b.r-3){ // dividers are solid only below pile surface
-      for(let j=1;j<L.bins;j++){
+      const kb=binOfX(b.x);
+      const j0=Math.max(1,kb), j1=Math.min(L.bins-1,kb+1);
+      for(let j=j0;j<=j1;j++){
         const xd=L.binsLeft+j*L.binW;
         if(Math.abs(b.x-xd)<b.r+dw+2){
           const cy=Math.max(L.pileLimit,Math.min(L.floorY,b.y));
-          resolve(b,xd,cy,dw);
+          resolve(b,xd,cy,dw,false);
         }
       }
     }
@@ -458,12 +472,13 @@ function step(dt){
     }
     const sp2=b.vx*b.vx+b.vy*b.vy;
     if(b.sup&&sp2<300&&b.y>L.divTop&&b.dec>L.rows){ settle(b,bi); continue; }
-    if(b.y>L.h+60){ balls.splice(bi,1); continue; } // fell out somehow
+    if(b.y>L.h+60){ balls[bi]=balls[balls.length-1]; balls.pop(); continue; } // fell out somehow
     if(sp2<400&&b.y<L.divTop){ // stuck in pin valley → micro-shake + pop
       b.slow=(b.slow||0)+dt;
       if(b.slow>0.3){
         b.slow=0; b.stuck=(b.stuck||0)+1;
         if(b.stuck>=3){ // hopeless orbit → re-drop fresh from the top
+          b.stuck=0; b.slow=0; b.landX=undefined;
           b.x=L.w/2+(Math.random()*2-1)*L.S*0.4;
           b.y=L.padTop-24; b.vx=0; b.vy=P.speed;
           b.tc=0; b.col=0; b.dec=1; b.px=b.x; b.py=b.y;
@@ -497,9 +512,12 @@ function pmfBinned(){
   }
   return p;
 }
+function getPmf(){
+  if(!pmCache) pmCache=pmfBinned();
+  return pmCache;
+}
 function computeStats(){
-  if(settledN<50) return null;
-  const pm=pmfBinned();
+  const pm=getPmf();
   let mu0=0; for(let j=0;j<pm.length;j++) mu0+=j*pm[j];
   let v0=0; for(let j=0;j<pm.length;j++) v0+=pm[j]*(j-mu0)*(j-mu0);
   const sd0=Math.sqrt(v0);
@@ -510,9 +528,11 @@ function computeStats(){
     for(let i=0;i<counts[j];i++)
       xs.push(j+((i*0.6180339887)%1)*2*js-js);
   const n=xs.length;
+  if(n<50) return null;
   for(const x of xs) mu+=x/n;
   let m2=0,m3=0; for(const x of xs){const d=x-mu; m2+=d*d; m3+=d*d*d;}
   m2/=n; m3/=n;
+  if(m2<=0) return null;
   xs.sort((a,b)=>a-b);
   const ks=ksNormal(xs,mu0,sd0);
   // chi-square vs exact binned binomial
@@ -526,8 +546,7 @@ function computeStats(){
 }
 function fmt(p){ return p>=0.001?p.toFixed(3):p.toExponential(1); }
 function renderStats(){
-  const s=computeStats(), el=document.getElementById('stats'),
-        v=document.getElementById('verdict');
+  const s=computeStats(), el=DOM.stats, v=DOM.verdict;
   if(!s){ el.innerHTML=''; v.style.color=''; v.textContent='drop some balls…'; return; }
   el.innerHTML=[
     ['n (settled)',s.n],['mean',s.mu.toFixed(2)+' / theory '+s.mu0.toFixed(2)],
@@ -551,6 +570,37 @@ function stackLayout(){
   L.pileRows=Math.max(6,Math.floor((L.floorY-L.pileLimit)/L.rowH));
   L.zs=1; L.rowHv=L.rowH; L.rowHvT=L.rowH; L.ballRv=L.ballR;
 }
+function zoomTarget(){
+  let mr=1;
+  for(let j=0;j<L.bins;j++){
+    const rws=binRows[j];
+    if(rws && rws.length>mr) mr=rws.length;
+  }
+  return Math.min(1,(L.floorY-L.pileLimit-4)/(mr*L.rowH+L.ballR));
+}
+function syncZoom(instant, sdt){
+  const zt=zoomTarget();
+  const before=L.zs;
+  L.rowHvT=L.rowH*zt; // physics surface tracks the target immediately
+  if(instant) L.zs=zt;
+  else L.zs+=(zt-L.zs)*Math.min(1,sdt*3);
+  L.rowHv=L.rowH*L.zs;
+  L.ballRv=L.ballR*L.zs;
+  const changed=instant||L.zs!==before;
+  if(changed) binVisDirty=true;
+  return changed;
+}
+function updateBinVis(){
+  if(!binVisDirty) return;
+  for(let j=0;j<L.bins;j++){
+    const base=L.binsLeft+j*L.binW;
+    for(const o of binVis[j]){
+      o.x=base+o.dx;
+      o.y=L.floorY-L.ballRv-o.t*L.rowHv;
+    }
+  }
+  binVisDirty=false;
+}
 // binRows[j] = list of row codes (fill<<1)|parity — parity is baked into the
 // slot offsets of the row's balls, so it must travel with the row when the
 // pile scrolls, not be recomputed from a position
@@ -573,6 +623,7 @@ function rotateRows(){ // endless mode: bottom row of every bin scrolls off
     }
     rws.shift();
   }
+  binVisDirty=true;
 }
 function stackTop(j){ // next settling ball's contact height — pile is drawn
   const rws=binRows[j]; // zoomed: physics surface tracks the compressed top
@@ -602,7 +653,7 @@ function rowSlotOrder(j,tp,n){
 function settle(b,bi){
   const lx=b.landX!==undefined?b.landX:b.x;
   const j=binOfX(lx);
-  balls.splice(bi,1);
+  balls[bi]=balls[balls.length-1]; balls.pop();
   counts[j]++; settledN++;
   if(P.endless) while(!rowHasSpace(j)) rotateRows();
   const rws=binRows[j];
@@ -618,8 +669,9 @@ function settle(b,bi){
   const ir=perm[Math.min(fill,nSlot-1)];
   const dx=L.ballR+0.65+L.slotW*(ir+0.5)+(tp?L.slotW/2:0);
   binVis[j].push({x:L.binsLeft+j*L.binW+dx, y:L.floorY-L.ballRv-t*L.rowHv,
-    t,dx,r:b.r,ci:b.ci,a:Math.random()*6.28,idx:b.idx,
+    t,dx,ci:b.ci,idx:b.idx,
     x0:b.x, y0:b.y, t0:simClock});
+  binVisDirty=true;
   binHit[j]=simClock; lastFx=simClock;
   statsDirty=true;
 }
@@ -749,7 +801,7 @@ function draw(time,alpha){
   let histN=settledN;
   lastPM=null;
   if(histN>0){
-    const pm=pmfBinned(); lastPM=pm; let maxE=0;
+    const pm=getPmf(); lastPM=pm; let maxE=0;
     for(let j=0;j<L.bins;j++) maxE=Math.max(maxE,pm[j]*histN);
     const maxO=Math.max(...counts,1);
     const sc=(L.floorY-L.histTop)*0.92/Math.max(maxE,maxO);
@@ -828,12 +880,10 @@ function draw(time,alpha){
     }
     ctx.restore();
   }
-  // settled balls — positions recomputed each frame from (row, slot): the bin
-  // chamber is zoomed (L.zs) so the tallest pile always fits the area
+  // settled balls — cached positions, refreshed only when a pile or zoom changes
+  updateBinVis();
   if(SPR) for(let j=0;j<L.bins;j++)
     for(const o of binVis[j]){
-      o.x=L.binsLeft+j*L.binW+o.dx;
-      o.y=L.floorY-L.ballRv-o.t*L.rowHv;
       const age=simClock-o.t0;
       if(age>=0&&age<0.06){
         const u=age/0.06, e=1-(1-u)*(1-u);
@@ -910,21 +960,16 @@ function frame(ts){
   fpsAcc+=1/dt; fpsN++;
   if(ts-fpsT>500){
     const f=Math.round(fpsAcc/fpsN);
-    document.getElementById('hFps').textContent=f;
+    DOM.hFps.textContent=f;
     if(f<45&&QUAL>1){ lowT+=0.5; if(lowT>=2){ QUAL=1; lowT=0; layout(); } }
     else lowT=0;
     fpsAcc=0;fpsN=0;fpsT=ts;
   }
   const sdt=dt*(P.slow?0.25:1);
-  // bin chamber zoom: shrink until the tallest pile fits the pile area
-  let mr=1; for(let j=0;j<L.bins;j++) if(binRows[j].length>mr) mr=binRows[j].length;
-  const zt=Math.min(1,(L.floorY-L.pileLimit-4)/(mr*L.rowH+L.ballR));
-  L.rowHvT=L.rowH*zt; // physics follows the target zoom immediately
-  L.zs+=(zt-L.zs)*Math.min(1,sdt*3); // drawing eases to it
-  L.rowHv=L.rowH*L.zs; L.ballRv=L.ballR*L.zs;
+  const zoomChanged=syncZoom(false,sdt); // shrink until tallest pile fits
   if(!paused){
     simClock+=sdt;
-    pBudget=balls.length>800?12:(QUAL>1?30:14);
+    pBudget=QUAL>1?30:14;
     physAcc+=sdt; let n=0;
     while(physAcc>=SUB&&n<16){ step(SUB); physAcc-=SUB; n++; }
     if(n>=16) physAcc=0; // spiral-of-death guard
@@ -934,15 +979,15 @@ function frame(ts){
       p.x+=p.vx*sdt; p.y+=p.vy*sdt;
       p.l-=sdt; if(p.l<=0) p.a=false; }
   }
-  // idle skip: paused, nothing moving, no fresh fx → hold last frame
-  if(!paused||balls.length||simClock-lastFx<0.6||dirty){
+  // idle skip: paused and static → hold the last frame
+  if(dirty||zoomChanged||(!paused&&(balls.length||simClock-lastFx<0.6))){
     dirty=false;
     draw(simClock,paused?1:physAcc/SUB);
   }
-  document.getElementById('hAct').textContent=balls.length;
-  document.getElementById('hSet').textContent=settledN+' / '+P.balls;
-  document.getElementById('hDone').textContent=
-    (spawned>=P.balls&&balls.length===0&&settledN>0)?'— complete':'';
+  DOM.hAct.textContent=balls.length;
+  DOM.hSet.textContent=settledN+' / '+P.balls;
+  DOM.hDone.textContent=
+    (spawned>=P.balls&&balls.length===0&&settledN===spawned)?'— complete':'';
   if(statsDirty&&ts-lastStats>400){ lastStats=ts; statsDirty=false; renderStats(); }
   requestAnimationFrame(frame);
 }
@@ -971,10 +1016,12 @@ function applyTheme(){
 }
 function reset(){
   balls=[]; grid=new Map(); rebuildBinArrays();
-  for(const p of pins) cellIns(grid,p.x,p.y,{stat:true,x:p.x,y:p.y,r:L.pinR,dead:false,pid:pins.indexOf(p)});
+  for(const p of pins) cellIns(grid,p.x,p.y,{x:p.x,y:p.y,r:L.pinR,pid:p.pid});
   if(parts) for(const p of parts) p.a=false;
+  if(pinHit) pinHit.fill(-9);
   lastFx=-9; dirty=true;
   spawned=0; settledN=0; spawnAcc=0; statsDirty=true;
+  syncZoom(true);
 }
 function structural(){ layout(); reset(); }
 for(const k of SL){
@@ -983,7 +1030,7 @@ for(const k of SL){
     P[k]=+el.value;
     document.getElementById('o_'+k).textContent=el.value;
     if(k==='rows'&&P.binsync){ P.bins=Math.min(48,P.rows+1); }
-    if(k==='rows'||k==='bins') structural(); else writeHash();
+    if(k==='rows'||k==='bins') structural();
     syncUI(); writeHash();
   });
 }
@@ -1012,19 +1059,19 @@ cv.addEventListener('mousemove',e=>{
 });
 cv.addEventListener('mouseleave',()=>{tip.style.display='none';});
 document.getElementById('bPlay').addEventListener('click',e=>{
-  paused=!paused; e.target.textContent=paused?'▶ PLAY':'⏸ PAUSE';
+  paused=!paused; e.target.textContent=paused?'▶ PLAY':'⏸ PAUSE'; writeHash();
 });
 document.getElementById('bReset').addEventListener('click',()=>{reset();});
 document.getElementById('bBurst').addEventListener('click',()=>{
   let k=0; while(k<100&&spawned<P.balls){spawnBall();k++;}
 });
 document.getElementById('bShare').addEventListener('click',()=>{
-  writeHash();
-  navigator.clipboard.writeText(location.href).then(()=>toast('link copied — settings travel in the URL'),
-    ()=>toast(location.href));
+  const url=writeHashNow();
+  navigator.clipboard.writeText(url).then(()=>toast('link copied — settings travel in the URL'),
+    ()=>toast(url));
 });
 function toast(m){
-  const el=document.getElementById('toast'); el.textContent=m; el.style.opacity=1;
+  const el=DOM.toast; el.textContent=m; el.style.opacity=1;
   clearTimeout(el._t); el._t=setTimeout(()=>el.style.opacity=0,2200);
 }
 // theme chips
@@ -1045,28 +1092,36 @@ document.getElementById('statNote').innerHTML=
 
 /* ============ hash ============ */
 let hashT=0;
+function buildHash(){
+  const q=new URLSearchParams();
+  q.set('theme',P.theme); q.set('rows',P.rows); q.set('binsync',P.binsync?1:0);
+  q.set('bins',P.bins); q.set('balls',P.balls); q.set('rate',P.rate);
+  q.set('speed',P.speed); q.set('grav',P.grav); q.set('rest',P.rest);
+  q.set('jit',P.jit); q.set('slow',P.slow?1:0); q.set('auto',paused?0:1);
+  q.set('trails',P.trails); q.set('endless',P.endless?1:0);
+  return '#'+q.toString();
+}
+function writeHashNow(){
+  history.replaceState(null,'',buildHash());
+  return location.href;
+}
 function writeHash(){
   clearTimeout(hashT);
-  hashT=setTimeout(()=>{
-    const q=new URLSearchParams();
-    q.set('theme',P.theme); q.set('rows',P.rows); q.set('binsync',P.binsync?1:0);
-    q.set('bins',P.bins); q.set('balls',P.balls); q.set('rate',P.rate);
-    q.set('speed',P.speed); q.set('grav',P.grav); q.set('rest',P.rest);
-    q.set('jit',P.jit); q.set('slow',P.slow?1:0); q.set('auto',paused?0:1);
-    q.set('trails',P.trails); q.set('endless',P.endless?1:0);
-    history.replaceState(null,'','#'+q.toString());
-  },250);
+  hashT=setTimeout(writeHashNow,250);
 }
 function readHash(){
   if(!location.hash) return;
   const q=new URLSearchParams(location.hash.slice(1));
   const num=k=>q.has(k)?+q.get(k):null;
+  const int=k=>{ const v=num(k); return v!==null&&Number.isInteger(v)?v:null; };
   if(q.get('theme')&&THEMES[q.get('theme')]) P.theme=q.get('theme');
-  const r=num('rows'); if(r>=2&&r<=40)P.rows=r;
+  const r=int('rows'); if(r!==null&&r>=2&&r<=40)P.rows=r;
   if(q.has('binsync'))P.binsync=q.get('binsync')==='1';
-  const b=num('bins');
+  const b=int('bins');
   if(b!==null&&b>=2&&b<=48){P.bins=b; if(q.get('binsync')!=='1')P.binsync=false;}
-  for(const k of ['balls','rate','speed','grav','rest','jit']){
+  const bv=int('balls');
+  if(bv!==null&&bv>=100&&bv<=20000) P.balls=bv;
+  for(const k of ['rate','speed','grav','rest','jit']){
     const el=document.getElementById(k);
     const v=num(k);
     if(v!==null&&v>=+el.min&&v<=+el.max) P[k]=v;
