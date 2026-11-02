@@ -70,8 +70,18 @@
   #stats .s span:last-child{color:var(--accent)}
   #verdict{
     margin-top:10px; padding:9px; text-align:center; font-size:11px; letter-spacing:2px;
-    border:1px dashed var(--line); border-radius:6px;
+    border:1px dashed var(--line); border-radius:6px; transition:color .25s, border-color .25s;
   }
+  #verdict::before{content:'●'; margin-right:6px; color:currentColor}
+  #verdict[data-state="bad"]{color:#ff5e5e; border-color:#ff5e5e}
+  #verdict[data-state="warn"]{color:#ffb347; border-color:#ffb347}
+  #verdict[data-state="good"]{color:var(--accent2); border-color:var(--accent2)}
+  #verdict[data-state="idle"], #verdict[data-state="converging"]{color:var(--muted); border-color:var(--line)}
+  #progress{height:5px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:10px}
+  #progressFill{height:100%; width:0; background:linear-gradient(90deg,var(--accent),var(--accent2)); transition:width .2s}
+  .legend{display:flex; gap:10px; align-items:center; font-size:9px; color:var(--muted); letter-spacing:1px; margin-top:10px}
+  .legend span{display:flex; align-items:center; gap:4px}
+  .legend i{width:8px; height:8px; border-radius:2px; display:block; background:var(--line); border:1px solid var(--line)}
   .note{font-size:9px; color:var(--muted); line-height:1.5; margin-top:10px}
   #toast{
     position:absolute; bottom:16px; left:50%; transform:translateX(-50%);
@@ -137,7 +147,13 @@
     <div class="btns"><button class="act ghost" id="bShare" title="Copy this URL — every setting travels inside its #hash">⤴ COPY SHARE LINK</button></div>
 
     <div id="stats"></div>
-    <div id="verdict">drop some balls…</div>
+    <div class="legend">
+      <span><i id="lgObs"></i>observed</span>
+      <span><i id="lgExp"></i>expected</span>
+      <span><i id="lgCurve"></i>gaussian</span>
+    </div>
+    <div id="progress"><div id="progressFill"></div></div>
+    <div id="verdict" data-state="idle">drop some balls…</div>
     <p class="note" id="statNote"></p>
   </aside>
 </div>
@@ -271,7 +287,11 @@ const DOM={
   hDone:document.getElementById('hDone'),
   stats:document.getElementById('stats'),
   verdict:document.getElementById('verdict'),
-  toast:document.getElementById('toast')
+  toast:document.getElementById('toast'),
+  progressFill:document.getElementById('progressFill'),
+  lgObs:document.getElementById('lgObs'),
+  lgExp:document.getElementById('lgExp'),
+  lgCurve:document.getElementById('lgCurve')
 };
 let L={}, QUAL=Math.min(2,window.devicePixelRatio||1);
 function layout(){
@@ -291,7 +311,7 @@ function layout(){
   const binsLeft=w/2-binsWidth/2;
   L={w,h,rows,bins,padTop,floorY,S,vs,binW,dw,ballR,pinR:ballR*0.62,
     binsLeft,binsRight:binsLeft+binsWidth,
-    divTop:floorY-Math.max(34,h*0.15), histTop:h*0.34,
+    divTop:floorY-Math.max(34,h*0.15),
     cell:Math.max(15,S,binW)};
   pins=[]; // pins carry their own id; reset() builds the spatial grid
   for(let r=0;r<rows;r++){
@@ -305,6 +325,7 @@ function layout(){
   L.pileLimit=Math.min(floorY-ballR-Math.max(12,ballR),
                       padTop+rows*vs+ballR+3);
   L.divTop=Math.min(L.divTop,L.pileLimit-2); // dividers reach pile surface
+  L.histTop=L.divTop; // histogram stays inside the bin chamber
   stackLayout();
   syncZoom(true);
   makeBGLayer();
@@ -549,17 +570,17 @@ function computeStats(){
 function fmt(p){ return p>=0.001?p.toFixed(3):p.toExponential(1); }
 function renderStats(){
   const s=computeStats(), el=DOM.stats, v=DOM.verdict;
-  if(!s){ el.innerHTML=''; v.style.color=''; v.textContent='drop some balls…'; return; }
+  if(!s){ el.innerHTML=''; v.dataset.state='idle'; v.textContent='drop some balls…'; return; }
   el.innerHTML=[
     ['n (settled)',s.n],['mean',s.mu.toFixed(2)+' / theory '+s.mu0.toFixed(2)],
     ['σ',s.sd.toFixed(2)+' / theory '+s0f(s)],['skew',s.skew.toFixed(3)],
     ['KS  D',s.ksD.toFixed(4)],['KS  p',fmt(s.ksP)],
     ['χ²',s.chi.toFixed(1)+'  (df '+s.df+')'],['χ² p',fmt(s.chiP)]
   ].map(r=>`<div class="s"><span>${r[0]}</span><span>${r[1]}</span></div>`).join('');
-  if(s.chiP<0.01){ v.textContent='PHYSICS ≠ BOARD THEORY ✗ (χ² p < .01)'; v.style.color='#ff5e5e'; }
-  else if(s.ksP<0.01){ v.textContent='BINOMIAL ✓ — NOT YET GAUSSIAN (KS p < .01: more rows, or bins = rows+1)'; v.style.color='#ffb347'; }
-  else if(s.ksP>=0.05&&s.chiP>=0.05){ v.textContent='BINOMIAL → GAUSSIAN ✓ (both p ≥ .05)'; v.style.color='var(--accent2)'; }
-  else { v.textContent='converging…'; v.style.color='var(--muted)'; }
+  if(s.chiP<0.01){ v.dataset.state='bad'; v.textContent='χ² p < .01 — physics ≠ theory'; }
+  else if(s.ksP<0.01){ v.dataset.state='warn'; v.textContent='binomial ✓ — not yet gaussian'; }
+  else if(s.ksP>=0.05&&s.chiP>=0.05){ v.dataset.state='good'; v.textContent='binomial → gaussian ✓'; }
+  else { v.dataset.state='converging'; v.textContent='converging…'; }
 }
 function s0f(s){ return s.sd0.toFixed(2); }
 
@@ -667,6 +688,7 @@ function settle(b,bi){
   statsDirty=true;
 }
 let bgLayer=null, pinLayer=null;
+let fade=0, bgOld=null, pinOld=null;
 function makeBGLayer(){
   if(!L.w) return;
   const t=THEMES[P.theme];
@@ -693,21 +715,66 @@ function makeBGLayer(){
     for(let i=1;i<9;i++){ const y=hy+ (L.h-hy)*Math.pow(i/9,2.2);
       g.beginPath(); g.moveTo(0,y); g.lineTo(L.w,y); g.stroke(); } }
   if(P.theme==='metal'){ g.fillStyle='rgba(255,255,255,.02)';
-    for(let y=0;y<L.h;y+=3) g.fillRect(0,y,L.w,1); }
+    for(let y=0;y<L.h;y+=3) g.fillRect(0,y,L.w,1);
+    g.strokeStyle='rgba(255,255,255,.035)'; g.lineWidth=1;
+    for(let i=-3;i<=3;i++){ g.beginPath();
+      g.moveTo(L.w/2+i*120,0); g.lineTo(L.w/2+i*120+70,L.h); g.stroke(); } }
+  if(P.theme==='neon'){ g.strokeStyle='rgba(0,247,255,.045)'; g.lineWidth=1;
+    for(let x=0;x<=L.w;x+=48){ g.beginPath(); g.moveTo(x,0); g.lineTo(x,L.h); g.stroke(); }
+    for(let y=0;y<=L.h;y+=48){ g.beginPath(); g.moveTo(0,y); g.lineTo(L.w,y); g.stroke(); } }
+  if(P.theme==='vaporwave'){
+    const hg=g.createRadialGradient(L.w/2,L.h*0.30,0,L.w/2,L.h*0.30,L.w*0.45);
+    hg.addColorStop(0,'rgba(255,110,199,.16)'); hg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=hg; g.fillRect(0,0,L.w,L.h); }
+  if(P.theme==='gems'){
+    const gg=g.createRadialGradient(L.w/2,L.h*0.38,0,L.w/2,L.h*0.38,Math.min(L.w,L.h)*0.55);
+    gg.addColorStop(0,'rgba(201,160,255,.12)'); gg.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=gg; g.fillRect(0,0,L.w,L.h); }
+  if(P.theme==='elemental'){
+    const em=g.createLinearGradient(0,L.divTop,0,L.floorY);
+    em.addColorStop(0,'rgba(255,120,60,0)'); em.addColorStop(1,'rgba(255,90,30,.10)');
+    g.fillStyle=em; g.fillRect(L.binsLeft,L.divTop,L.binsRight-L.binsLeft,L.floorY-L.divTop); }
+  // ambient glow + bin-chamber ambient occlusion + edge vignette
+  const amb=g.createRadialGradient(L.w/2,L.h*0.38,0,L.w/2,L.h*0.38,Math.max(L.w,L.h)*0.65);
+  amb.addColorStop(0,t.hist); amb.addColorStop(1,'rgba(0,0,0,0)');
+  g.fillStyle=amb; g.fillRect(0,0,L.w,L.h);
+  const ao=g.createLinearGradient(0,L.divTop,0,L.floorY);
+  ao.addColorStop(0,'rgba(0,0,0,0)'); ao.addColorStop(1,'rgba(0,0,0,.28)');
+  g.fillStyle=ao; g.fillRect(L.binsLeft,L.divTop,L.binsRight-L.binsLeft,L.floorY-L.divTop);
+  const vig=g.createRadialGradient(L.w/2,L.h*0.45,Math.min(L.w,L.h)*0.28,
+    L.w/2,L.h*0.45,Math.max(L.w,L.h)*0.72);
+  vig.addColorStop(0,'rgba(0,0,0,0)'); vig.addColorStop(1,'rgba(0,0,0,.32)');
+  g.fillStyle=vig; g.fillRect(0,0,L.w,L.h);
+
   // pins and funnel live on their own layer so dynamic effects and the
   // histogram can sit around them without repainting the static pins
   pinLayer=document.createElement('canvas');
   pinLayer.width=cv.width; pinLayer.height=cv.height;
   const p=pinLayer.getContext('2d'); p.setTransform(dpr,0,0,dpr,0,0);
   for(const pin of pins) drawPin(p,pin.x,pin.y,t);
-  // drop funnel marker
-  const fx=L.w/2, fy=L.padTop-27;
-  p.save(); p.strokeStyle=t.pin.stroke; p.lineWidth=1.6; p.globalAlpha=0.85;
-  if(t.glow){ p.shadowColor=t.pin.stroke; p.shadowBlur=6; }
+
+  // glassy hopper/funnel at the drop point
+  const fx=L.w/2, topY=Math.max(6,L.padTop-40);
+  const topW=Math.min(50,Math.max(16,L.S*2.4));
+  const neckW=Math.max(8,L.S*0.34);
+  const hgt=26;
+  p.save();
+  p.strokeStyle=t.pin.stroke; p.lineWidth=1.5; p.globalAlpha=0.9;
+  if(t.glow){ p.shadowColor=t.pin.stroke; p.shadowBlur=7; }
+  p.fillStyle=t.hist;
   p.beginPath();
-  p.moveTo(fx-13,fy-16); p.lineTo(fx-4,fy-2);
-  p.moveTo(fx+13,fy-16); p.lineTo(fx+4,fy-2);
-  p.stroke(); p.restore();
+  p.moveTo(fx-topW/2,topY);
+  p.lineTo(fx-topW/2+7,topY+8);
+  p.lineTo(fx-neckW/2,topY+hgt);
+  p.lineTo(fx+neckW/2,topY+hgt);
+  p.lineTo(fx+topW/2-7,topY+8);
+  p.lineTo(fx+topW/2,topY);
+  p.closePath(); p.fill(); p.stroke();
+  p.beginPath(); p.moveTo(fx-neckW/2,topY+hgt); p.lineTo(fx+neckW/2,topY+hgt); p.stroke();
+  p.globalAlpha=0.55; p.setLineDash([2,4]);
+  p.beginPath(); p.moveTo(fx,topY+hgt); p.lineTo(fx,L.padTop+0.5*L.vs-L.pinR); p.stroke();
+  p.setLineDash([]);
+  p.restore();
   bakeSprites();
 }
 let SPR=null;
@@ -715,11 +782,19 @@ function bakeSprites(){
   if(!L.ballR) return;
   const t=THEMES[P.theme], dpr=cv.width/L.w, R=L.ballR;
   SPR=t.pal.map((c,ci)=>{
-    const pad=t.glow?R*2.2:R*0.2+1;
+    const pad=t.glow?R*2.2:R*0.75+1;
     const el=document.createElement('canvas');
     el.width=el.height=Math.max(2,Math.ceil((R+pad)*2*dpr));
     const g=el.getContext('2d');
     g.setTransform(dpr,0,0,dpr,0,0);
+    // baked contact shadow gives every ball depth without an extra draw call
+    g.save();
+    g.globalAlpha=t.glow?0.10:0.22;
+    g.fillStyle='#000';
+    g.translate(R+pad,R+pad+R*0.20);
+    g.scale(1,0.42);
+    g.beginPath(); g.arc(0,0,R*0.72,0,7); g.fill();
+    g.restore();
     paintBall(g,R+pad,R+pad,R,c,t,ci);
     return {img:el,half:R+pad};
   });
@@ -792,6 +867,9 @@ function draw(time,alpha){
   if(alpha===undefined) alpha=1;
   const t=THEMES[P.theme];
   ctx.drawImage(bgLayer,0,0,L.w,L.h);
+  if(bgOld && fade>0){
+    ctx.save(); ctx.globalAlpha=fade; ctx.drawImage(bgOld,0,0,L.w,L.h); ctx.restore();
+  }
   // histogram ghost bars + expected outline + gaussian curve
   let histN=settledN;
   lastPM=null;
@@ -825,6 +903,9 @@ function draw(time,alpha){
     ctx.restore();
   }
   if(pinLayer) ctx.drawImage(pinLayer,0,0,L.w,L.h);
+  if(pinOld && fade>0){
+    ctx.save(); ctx.globalAlpha=fade; ctx.drawImage(pinOld,0,0,L.w,L.h); ctx.restore();
+  }
   // trails v2: frame-sampled ring buffer, 3 tapered alpha bands, additive
   if(trailsOn()){
     const TN=12;
@@ -933,6 +1014,14 @@ function draw(time,alpha){
   ctx.restore();
   ctx.fillStyle=t.floor;
   ctx.fillRect(0,L.floorY+1.5,L.w,L.h-L.floorY);
+  // side rails frame the playfield without covering the piles
+  ctx.save();
+  ctx.strokeStyle=t.div; ctx.globalAlpha=0.42; ctx.lineWidth=1.1;
+  if(t.glow){ ctx.shadowColor=t.div; ctx.shadowBlur=4; }
+  ctx.beginPath();
+  ctx.moveTo(L.binsLeft-9,L.padTop-1); ctx.lineTo(L.binsLeft-9,L.floorY);
+  ctx.moveTo(L.binsRight+9,L.padTop-1); ctx.lineTo(L.binsRight+9,L.floorY);
+  ctx.stroke(); ctx.restore();
   // counts (with pop bounce on landing)
   if(L.binW>=16){
     if(!fontCache) fontCache=getComputedStyle(document.body).fontFamily;
@@ -968,6 +1057,13 @@ function frame(ts){
   }
   const sdt=dt*(P.slow?0.25:1);
   const zoomChanged=syncZoom(false,sdt); // shrink until tallest pile fits
+  let fadeChanged=false;
+  if(fade>0){
+    const before=fade;
+    fade=Math.max(0,fade-dt/0.35);
+    fadeChanged=fade!==before;
+    if(fade===0){ bgOld=null; pinOld=null; }
+  }
   if(!paused){
     simClock+=sdt;
     pBudget=QUAL>1?30:14;
@@ -981,7 +1077,7 @@ function frame(ts){
       p.l-=sdt; if(p.l<=0) p.a=false; }
   }
   // idle skip: paused and static → hold the last frame
-  if(dirty||zoomChanged||(!paused&&(balls.length||simClock-lastFx<0.6))){
+  if(dirty||zoomChanged||fadeChanged||(!paused&&(balls.length||simClock-lastFx<0.6))){
     dirty=false;
     draw(simClock,paused?1:physAcc/SUB);
   }
@@ -989,6 +1085,7 @@ function frame(ts){
   DOM.hSet.textContent=settledN+' / '+P.balls;
   DOM.hDone.textContent=
     (spawned>=P.balls&&balls.length===0&&settledN===spawned)?'— complete':'';
+  DOM.progressFill.style.width=(100*Math.min(1,settledN/Math.max(1,P.balls))).toFixed(1)+'%';
   if(statsDirty&&ts-lastStats>400){ lastStats=ts; statsDirty=false; renderStats(); }
   requestAnimationFrame(frame);
 }
@@ -1010,9 +1107,13 @@ function syncUI(){
 }
 function applyTheme(){
   const t=THEMES[P.theme];
+  if(bgLayer){ bgOld=bgLayer; pinOld=pinLayer; fade=1; }
   for(const[k,v]of Object.entries(t.css)) document.documentElement.style.setProperty(k,v);
   fontCache='';
   makeBGLayer();
+  DOM.lgObs.style.background=t.hist;
+  DOM.lgExp.style.background=t.exp;
+  DOM.lgCurve.style.background=t.curve;
   dirty=true;
 }
 function reset(){
