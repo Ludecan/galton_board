@@ -666,7 +666,7 @@ function settle(b,bi){
   binHit[j]=simClock; lastFx=simClock;
   statsDirty=true;
 }
-let bgLayer=null;
+let bgLayer=null, pinLayer=null;
 function makeBGLayer(){
   if(!L.w) return;
   const t=THEMES[P.theme];
@@ -694,16 +694,20 @@ function makeBGLayer(){
       g.beginPath(); g.moveTo(0,y); g.lineTo(L.w,y); g.stroke(); } }
   if(P.theme==='metal'){ g.fillStyle='rgba(255,255,255,.02)';
     for(let y=0;y<L.h;y+=3) g.fillRect(0,y,L.w,1); }
-  // pins
-  for(const p of pins) drawPin(g,p.x,p.y,t);
+  // pins and funnel live on their own layer so dynamic effects and the
+  // histogram can sit around them without repainting the static pins
+  pinLayer=document.createElement('canvas');
+  pinLayer.width=cv.width; pinLayer.height=cv.height;
+  const p=pinLayer.getContext('2d'); p.setTransform(dpr,0,0,dpr,0,0);
+  for(const pin of pins) drawPin(p,pin.x,pin.y,t);
   // drop funnel marker
   const fx=L.w/2, fy=L.padTop-27;
-  g.save(); g.strokeStyle=t.pin.stroke; g.lineWidth=1.6; g.globalAlpha=0.85;
-  if(t.glow){ g.shadowColor=t.pin.stroke; g.shadowBlur=6; }
-  g.beginPath();
-  g.moveTo(fx-13,fy-16); g.lineTo(fx-4,fy-2);
-  g.moveTo(fx+13,fy-16); g.lineTo(fx+4,fy-2);
-  g.stroke(); g.restore();
+  p.save(); p.strokeStyle=t.pin.stroke; p.lineWidth=1.6; p.globalAlpha=0.85;
+  if(t.glow){ p.shadowColor=t.pin.stroke; p.shadowBlur=6; }
+  p.beginPath();
+  p.moveTo(fx-13,fy-16); p.lineTo(fx-4,fy-2);
+  p.moveTo(fx+13,fy-16); p.lineTo(fx+4,fy-2);
+  p.stroke(); p.restore();
   bakeSprites();
 }
 let SPR=null;
@@ -820,6 +824,7 @@ function draw(time,alpha){
     ctx.lineWidth=1.6; ctx.globalAlpha=1; ctx.stroke();
     ctx.restore();
   }
+  if(pinLayer) ctx.drawImage(pinLayer,0,0,L.w,L.h);
   // trails v2: frame-sampled ring buffer, 3 tapered alpha bands, additive
   if(trailsOn()){
     const TN=12;
