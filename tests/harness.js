@@ -226,7 +226,6 @@ function createHarness(options = {}) {
       get SUB(){ return SUB; },
       spawnBall, spawnP, step, settle, resolve, layout, reset, structural,
       computeStats, pmfBinned, getPmf, laneX, binOfX, stackTop, rowHasSpace, rotateRows,
-      updateBinVis,
       readHash, writeHash, syncUI, applyTheme, frame, draw,
       normCdf, normPdf, erf, chiSquareP, ksNormal, kolmogorovQ,
     };

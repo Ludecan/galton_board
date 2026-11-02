@@ -417,11 +417,13 @@ function step(dt){
     if(Math.abs(b.x-L.binsLeft)<L.cell) resolve(b,L.binsLeft-L.cell,b.y,L.cell,false); // left wall
     if(Math.abs(b.x-L.binsRight)<L.cell) resolve(b,L.binsRight+L.cell,b.y,L.cell,false); // right wall
     if(b.sup){ b.vx*=0.995; b.w*=0.99; } // rolling resistance → piles settle
-    const cx=Math.floor(b.x/cell), cy=Math.floor(b.y/cell);
-    for(let gx=cx-1;gx<=cx+1;gx++)for(let gy=cy-1;gy<=cy+1;gy++){
-      const arr=grid.get(cellKey(gx,gy)); if(!arr)continue;
-      for(let i=0;i<arr.length;i++){ const c=arr[i];
-        resolve(b,c.x,c.y,c.r,true,c.pid); }
+    if(b.y<=L.pileLimit){ // pins end above the bin chamber
+      const cx=Math.floor(b.x/cell), cy=Math.floor(b.y/cell);
+      for(let gx=cx-1;gx<=cx+1;gx++)for(let gy=cy-1;gy<=cy+1;gy++){
+        const arr=grid.get(cellKey(gx,gy)); if(!arr)continue;
+        for(let i=0;i<arr.length;i++){ const c=arr[i];
+          resolve(b,c.x,c.y,c.r,true,c.pid); }
+      }
     }
     if(b.y>L.pileLimit-b.r-3){ // dividers are solid only below pile surface
       const kb=binOfX(b.x);
@@ -589,17 +591,6 @@ function syncZoom(instant, sdt){
   const changed=instant||L.zs!==before;
   if(changed) binVisDirty=true;
   return changed;
-}
-function updateBinVis(){
-  if(!binVisDirty) return;
-  for(let j=0;j<L.bins;j++){
-    const base=L.binsLeft+j*L.binW;
-    for(const o of binVis[j]){
-      o.x=base+o.dx;
-      o.y=L.floorY-L.ballRv-o.t*L.rowHv;
-    }
-  }
-  binVisDirty=false;
 }
 // binRows[j] = list of row codes (fill<<1)|parity — parity is baked into the
 // slot offsets of the row's balls, so it must travel with the row when the
@@ -881,9 +872,14 @@ function draw(time,alpha){
     ctx.restore();
   }
   // settled balls — cached positions, refreshed only when a pile or zoom changes
-  updateBinVis();
+  const refreshPiles=binVisDirty;
+  binVisDirty=false;
   if(SPR) for(let j=0;j<L.bins;j++)
     for(const o of binVis[j]){
+      if(refreshPiles){
+        o.x=L.binsLeft+j*L.binW+o.dx;
+        o.y=L.floorY-L.ballRv-o.t*L.rowHv;
+      }
       const age=simClock-o.t0;
       if(age>=0&&age<0.06){
         const u=age/0.06, e=1-(1-u)*(1-u);
