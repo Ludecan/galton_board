@@ -38,6 +38,7 @@ function makeContext2D(metrics) {
     closePath: noop,
     moveTo: noop,
     lineTo: noop,
+    quadraticCurveTo: noop,
     arc: noop,
     fill: noop,
     stroke: noop,

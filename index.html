@@ -17,7 +17,7 @@
     color:var(--txt); font-family:var(--font); overflow:hidden;
     transition:background .5s,color .5s;
   }
-  #app{display:flex; height:100vh}
+  #app{display:flex; height:100vh; height:100dvh}
   #stage{flex:1; position:relative; min-width:0}
   canvas{position:absolute; inset:0; width:100%; height:100%; display:block}
   #hud{
@@ -33,6 +33,8 @@
   h1{font-size:15px; letter-spacing:3px; margin:2px 0 2px; color:var(--accent)}
   h1 small{display:block; font-size:9px; letter-spacing:2px; color:var(--muted); font-weight:400; margin-top:3px}
   .chips{display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 4px}
+  .presets{display:flex; gap:6px; margin:8px 0 0}
+  .presets .chip{flex:1; text-align:center; padding:5px 8px}
   .chip{
     font-family:var(--font); font-size:10px; letter-spacing:1px; padding:5px 10px;
     color:var(--muted); background:transparent; border:1px solid var(--line);
@@ -44,7 +46,24 @@
   .row{display:grid; grid-template-columns:1fr auto; align-items:center; gap:4px 8px; margin-bottom:7px}
   .row label{font-size:11px}
   .row output{font-size:11px; color:var(--accent); min-width:44px; text-align:right}
-  .row input[type=range]{grid-column:1/-1; accent-color:var(--accent); width:100%; height:18px}
+  .row input[type=range]{
+    grid-column:1/-1; width:100%; height:18px; accent-color:var(--accent);
+    background:transparent; -webkit-appearance:none; appearance:none;
+  }
+  input[type=range]::-webkit-slider-runnable-track{height:3px; background:var(--line); border-radius:2px}
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:12px; height:12px; border-radius:50%;
+    background:var(--accent); margin-top:-4.5px; border:0;
+    box-shadow:0 0 8px -2px var(--accent);
+  }
+  input[type=range]::-moz-range-track{height:3px; background:var(--line); border-radius:2px}
+  input[type=range]::-moz-range-thumb{
+    width:12px; height:12px; border-radius:50%; background:var(--accent); border:0;
+    box-shadow:0 0 8px -2px var(--accent);
+  }
+  button:focus-visible, .chip:focus-visible, input:focus-visible, select:focus-visible{
+    outline:2px solid var(--accent); outline-offset:2px;
+  }
   .row.off{opacity:.35; pointer-events:none}
   .btns{display:flex; gap:8px; margin-top:14px; flex-wrap:wrap}
   button.act{
@@ -92,12 +111,15 @@
     #app{flex-direction:column}
     #panel{width:100%; height:45%; border-left:none; border-top:1px solid var(--line)}
   }
+  @media (prefers-reduced-motion:reduce){
+    body,#panel,#verdict,#progressFill{transition:none!important}
+  }
 </style>
 </head>
 <body>
 <div id="app">
   <div id="stage">
-    <canvas id="cv"></canvas>
+    <canvas id="cv" aria-label="Galton board simulation"></canvas>
     <div id="hud">
       <span>fps <b id="hFps">–</b></span>
       <span>active <b id="hAct">0</b></span>
@@ -110,6 +132,10 @@
   <aside id="panel">
     <h1>GALTON&nbsp;BOARD<small>physics quincunx · binomial → gaussian</small></h1>
     <div class="chips" id="chips"></div>
+    <div class="presets" id="presets">
+      <button class="chip" data-preset="showcase">SHOWCASE</button>
+      <button class="chip" data-preset="stats">STATS</button>
+    </div>
 
     <section>
       <h2>Board</h2>
@@ -153,7 +179,7 @@
       <span><i id="lgCurve"></i>gaussian</span>
     </div>
     <div id="progress"><div id="progressFill"></div></div>
-    <div id="verdict" data-state="idle">drop some balls…</div>
+    <div id="verdict" data-state="idle" aria-live="polite">drop some balls…</div>
     <p class="note" id="statNote"></p>
   </aside>
 </div>
@@ -269,6 +295,7 @@ const THEMES={
 /* ============ state ============ */
 const P={theme:'vaporwave',rows:40,binsync:false,bins:15,balls:20000,rate:5,speed:200,
   grav:3000,rest:0.25,jit:0.25,slow:false,auto:true,trails:'auto',endless:false};
+const REDUCED = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 let paused=false, spawned=0;
 let balls=[], counts=[], binVis=[], settledN=0;
 let pile=[], binRows=[]; // per-bin visible count + row codes
@@ -357,7 +384,7 @@ function spawnBall(){
   spawned++;
   balls.push({
     x:L.w/2+(Math.random()-0.5)*L.S*0.4, y:L.padTop-26+Math.random()*4,
-    vx:0, vy:P.speed, w:0, r:L.ballR, ci:spawned%6,
+    vx:0, vy:P.speed, w:0, a:Math.random()*6.28, r:L.ballR, ci:spawned%6,
     sup:false, tr:new Float32Array(24), th:0, tc:0,
     idx:spawned, col:0, dec:1, px:0, py:0
   });
@@ -365,7 +392,7 @@ function spawnBall(){
 }
 const FRIC=0.55; // contact friction coeff (rolling)
 function spawnP(x,y,vn,c,up){
-  if(pBudget<=0||balls.length>1400) return;
+  if(REDUCED||pBudget<=0||balls.length>1400) return;
   const n=Math.max(1,Math.min(5,1+(vn/160|0)));
   if(n>pBudget) return;
   pBudget-=n;
@@ -405,7 +432,7 @@ function resolve(b,cx,cy,cr,isPin,pid){
       }
       if(pid!==undefined){ pinHit[pid]=simClock; lastFx=simClock; }
       if(vn<-110&&Math.random()<0.6)
-        spawnP(b.x-nx*b.r,b.y-ny*b.r,-vn,THEMES[P.theme].pin.stroke,false);
+        spawnP(b.x-nx*b.r,b.y-ny*b.r,-vn,'pin',false);
     }else if(vn<0){ b.vx-=vn*nx; b.vy-=vn*ny; } // cradle: absorb normal only
     if(ny<-0.2) b.sup=true;
     return;
@@ -416,7 +443,7 @@ function resolve(b,cx,cy,cr,isPin,pid){
   if(vn<0){
     jn=-(1+P.rest)*vn; b.vx-=(1+P.rest)*vn*nx; b.vy-=(1+P.rest)*vn*ny;
     if(vn<-260&&Math.random()<0.5)
-      spawnP(b.x-nx*b.r,b.y-ny*b.r,-vn,THEMES[P.theme].floorStroke,ny<-0.4);
+      spawnP(b.x-nx*b.r,b.y-ny*b.r,-vn,'floor',ny<-0.4);
   }
   jn+=P.grav*SUB*0.5; // sustained normal support vs gravity
   if(ny<-0.2){ b.sup=true; } // floor/pile/divider surface below
@@ -432,7 +459,7 @@ function step(dt){
   for(let bi=balls.length-1;bi>=0;bi--){
     const b=balls[bi];
     b.px=b.x; b.py=b.y;
-    b.vy+=g*dt; b.x+=b.vx*dt; b.y+=b.vy*dt;
+    b.vy+=g*dt; b.x+=b.vx*dt; b.y+=b.vy*dt; b.a+=b.w*dt;
     b.sup=false;
     if(Math.abs(b.y-L.floorY)<L.cell) resolve(b,b.x,L.floorY+L.cell,L.cell,false); // floor
     if(Math.abs(b.x-L.binsLeft)<L.cell) resolve(b,L.binsLeft-L.cell,b.y,L.cell,false); // left wall
@@ -777,7 +804,7 @@ function makeBGLayer(){
   p.restore();
   bakeSprites();
 }
-let SPR=null;
+let SPR=null, SPK=null;
 function bakeSprites(){
   if(!L.ballR) return;
   const t=THEMES[P.theme], dpr=cv.width/L.w, R=L.ballR;
@@ -798,6 +825,20 @@ function bakeSprites(){
     paintBall(g,R+pad,R+pad,R,c,t,ci);
     return {img:el,half:R+pad};
   });
+  SPK={};
+  for(const [key,c] of [['pin',t.pin.stroke],['floor',t.floorStroke]]){
+    const sr=Math.max(2,L.ballR*1.6), pad=sr*2;
+    const el=document.createElement('canvas');
+    el.width=el.height=Math.max(2,Math.ceil((sr+pad)*2*dpr));
+    const g=el.getContext('2d');
+    g.setTransform(dpr,0,0,dpr,0,0);
+    const gr=g.createRadialGradient(sr+pad,sr+pad,0,sr+pad,sr+pad,sr);
+    gr.addColorStop(0,'rgba(255,255,255,.95)');
+    gr.addColorStop(0.35,c);
+    gr.addColorStop(1,'rgba(0,0,0,0)');
+    g.fillStyle=gr; g.beginPath(); g.arc(sr+pad,sr+pad,sr,0,7); g.fill();
+    SPK[key]={img:el,half:sr+pad,r:sr};
+  }
 }
 function drawPin(g,x,y,t){
   const r=L.pinR;
@@ -861,7 +902,7 @@ function drawSprSized(spr,x,y,zs){
   ctx.drawImage(spr.img,x-s,y-s,s*2,s*2);
 }
 let fontCache='', lastPM=null;
-function trailsOn(){ const t=THEMES[P.theme];
+function trailsOn(){ if(REDUCED) return false; const t=THEMES[P.theme];
   return P.trails==='on'||(P.trails==='auto'&&!!t.trails); }
 function draw(time,alpha){
   if(alpha===undefined) alpha=1;
@@ -911,7 +952,7 @@ function draw(time,alpha){
     const TN=12;
     ctx.save();
     if(t.glow) ctx.globalCompositeOperation='lighter';
-    ctx.lineCap='round';
+    ctx.lineCap='round'; ctx.lineJoin='round';
     for(const b of balls){
       const rx=b.px+(b.x-b.px)*alpha, ry=b.py+(b.y-b.py)*alpha;
       if(!paused){
@@ -934,10 +975,15 @@ function draw(time,alpha){
         ctx.beginPath();
         const i0=(b.th-b.tc+s0+TN)%TN;
         ctx.moveTo(b.tr[i0*2],b.tr[i0*2+1]);
-        for(let i=s0+1;i<s1;i++){
+        for(let i=s0+1;i<s1-1;i++){
           const ii=(b.th-b.tc+i+TN)%TN;
-          ctx.lineTo(b.tr[ii*2],b.tr[ii*2+1]);
+          const jj=(b.th-b.tc+i+1+TN)%TN;
+          const mx=(b.tr[ii*2]+b.tr[jj*2])*0.5;
+          const my=(b.tr[ii*2+1]+b.tr[jj*2+1])*0.5;
+          ctx.quadraticCurveTo(b.tr[ii*2],b.tr[ii*2+1],mx,my);
         }
+        const last=(b.th-b.tc+s1-1+TN)%TN;
+        ctx.lineTo(b.tr[last*2],b.tr[last*2+1]);
         ctx.stroke();
       }
       ctx.globalAlpha=1;
@@ -975,20 +1021,33 @@ function draw(time,alpha){
   // active balls at interpolated positions
   if(SPR) for(const b of balls){
     const rx=b.px+(b.x-b.px)*alpha, ry=b.py+(b.y-b.py)*alpha;
-    const fl=P.theme==='elemental' ? 0.5+0.5*Math.sin(time*7+b.idx) : 0;
+    const fl=REDUCED?0:(P.theme==='elemental' ? 0.5+0.5*Math.sin(time*7+b.idx) : 0);
     drawSpr(SPR[b.ci%SPR.length],rx,ry,fl);
+    // rotating highlight cue for rolling/spin
+    if(!REDUCED && Math.abs(b.w)>0.8){
+      ctx.save();
+      ctx.translate(rx,ry); ctx.rotate(b.a);
+      ctx.globalAlpha=0.42;
+      ctx.strokeStyle='rgba(255,255,255,.8)';
+      ctx.lineWidth=Math.max(0.6,b.r*0.16);
+      ctx.lineCap='round';
+      ctx.beginPath(); ctx.arc(0,0,b.r*0.56,-0.55,0.55); ctx.stroke();
+      ctx.restore();
+    }
   }
-  // impact particles
+  // impact particles — pre-baked spark sprites
   if(parts){
     ctx.save();
     if(t.glow) ctx.globalCompositeOperation='lighter';
     for(let i=0;i<PMAX;i++){ const p=parts[i]; if(!p.a) continue;
+      const spr=SPK&&SPK[p.c]; if(!spr) continue;
+      const k=p.sz/spr.r, s=spr.half*k;
       ctx.globalAlpha=Math.max(0,p.l/p.L)*0.9;
-      ctx.fillStyle=p.c;
-      ctx.beginPath(); ctx.arc(p.x,p.y,p.sz,0,7); ctx.fill(); }
+      ctx.drawImage(spr.img,p.x-s,p.y-s,s*2,s*2);
+    }
     ctx.restore();
   }
-  // bin landing edge flash
+  // bin landing edge flash + ripple
   if(binHit){
     ctx.save(); ctx.fillStyle=t.div;
     for(let j=0;j<L.bins;j++){
@@ -996,6 +1055,17 @@ function draw(time,alpha){
       if(age<0||age>=0.32) continue;
       ctx.globalAlpha=0.13*(1-age/0.32);
       ctx.fillRect(L.binsLeft+j*L.binW+1,L.divTop,L.binW-2,L.floorY-L.divTop);
+    }
+    ctx.restore();
+    ctx.save(); ctx.strokeStyle=t.label; ctx.lineWidth=1;
+    for(let j=0;j<L.bins;j++){
+      const age=simClock-binHit[j];
+      if(age<0||age>=0.24) continue;
+      const u=age/0.24;
+      ctx.globalAlpha=0.38*(1-u);
+      ctx.beginPath();
+      ctx.arc(L.binsLeft+(j+0.5)*L.binW,L.floorY,L.ballR*(1+u*3),0,7);
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -1066,7 +1136,7 @@ function frame(ts){
   }
   if(!paused){
     simClock+=sdt;
-    pBudget=QUAL>1?30:14;
+    pBudget=QUAL>1?24:12;
     physAcc+=sdt; let n=0;
     while(physAcc>=SUB&&n<16){ step(SUB); physAcc-=SUB; n++; }
     if(n>=16) physAcc=0; // spiral-of-death guard
@@ -1107,7 +1177,8 @@ function syncUI(){
 }
 function applyTheme(){
   const t=THEMES[P.theme];
-  if(bgLayer){ bgOld=bgLayer; pinOld=pinLayer; fade=1; }
+  if(bgLayer && !REDUCED){ bgOld=bgLayer; pinOld=pinLayer; fade=1; }
+  else { bgOld=pinOld=null; fade=0; }
   for(const[k,v]of Object.entries(t.css)) document.documentElement.style.setProperty(k,v);
   fontCache='';
   makeBGLayer();
@@ -1148,7 +1219,7 @@ document.getElementById('endless').addEventListener('change',e=>{
 document.getElementById('trails').addEventListener('change',e=>{P.trails=e.target.value; dirty=true; writeHash();});
 // bin hover tooltip
 const tip=document.getElementById('tip');
-cv.addEventListener('mousemove',e=>{
+cv.addEventListener('pointermove',e=>{
   const r=cv.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
   if(my>L.divTop-230&&my<=L.floorY&&mx>=L.binsLeft&&mx<=L.binsRight){
     const j=binOfX(mx), n=counts[j], tot=settledN||1;
@@ -1159,7 +1230,7 @@ cv.addEventListener('mousemove',e=>{
     tip.style.top=Math.max(4,Math.min(my+12,r.height-(tip.offsetHeight||40)-6))+'px';
   }else tip.style.display='none';
 });
-cv.addEventListener('mouseleave',()=>{tip.style.display='none';});
+cv.addEventListener('pointerleave',()=>{tip.style.display='none';});
 document.getElementById('bPlay').addEventListener('click',e=>{
   paused=!paused; e.target.textContent=paused?'▶ PLAY':'⏸ PAUSE'; writeHash();
 });
@@ -1184,6 +1255,24 @@ for(const name of Object.keys(THEMES)){
   b.title=name+' theme';
   b.addEventListener('click',()=>{ P.theme=name; applyTheme(); syncUI(); writeHash(); });
   chips.appendChild(b);
+}
+const PRESETS={
+  showcase:{rows:20,binsync:true,bins:21,balls:4000,rate:40,speed:200,
+    grav:900,rest:0.35,jit:0.35,slow:false,trails:'on',endless:false},
+  stats:{rows:40,binsync:false,bins:15,balls:20000,rate:5,speed:200,
+    grav:3000,rest:0.25,jit:0.25,slow:false,trails:'auto',endless:false}
+};
+for(const name of Object.keys(PRESETS)){
+  const b=document.createElement('button');
+  b.className='chip'; b.dataset.preset=name; b.textContent=name.toUpperCase();
+  b.title=name+' preset';
+  b.addEventListener('click',()=>{
+    Object.assign(P,PRESETS[name]);
+    paused=false;
+    document.getElementById('bPlay').textContent='⏸ PAUSE';
+    structural(); syncUI(); writeHash();
+  });
+  document.getElementById('presets').appendChild(b);
 }
 document.getElementById('statNote').innerHTML=
   'Free flight, pin grazing, floor &amp; divider impacts, restitution and piles are integrated physically; '+

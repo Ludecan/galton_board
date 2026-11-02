@@ -18,6 +18,7 @@ function makeContext2D() {
     closePath: noop,
     moveTo: noop,
     lineTo: noop,
+    quadraticCurveTo: noop,
     arc: noop,
     fill: noop,
     stroke: noop,
