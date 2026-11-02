@@ -15,3 +15,7 @@ node perf/bench.js --seconds 60 --fps 60 --rate 120
 
 The output includes elapsed wall time, pipeline frames/s, settled/active counts,
 and canvas draw-call counts.
+
+Add `--deterministic` to replace random physics with a constant random stream.
+That makes the workload reproducible across code variants; use the default
+seeded mode for a more realistic stochastic run.

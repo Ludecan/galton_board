@@ -112,7 +112,7 @@ function makeRandom(seed) {
   };
 }
 
-function createHarness(seed = 12345678) {
+function createHarness(seed = 12345678, constantRandom = false) {
   const metrics = { drawImageCalls: 0, fillTextCalls: 0 };
   const elements = new Map();
   const ids = [
@@ -173,7 +173,7 @@ function createHarness(seed = 12345678) {
 
   const window = { devicePixelRatio: 1, addEventListener: () => {} };
   const seededMath = Object.create(Math);
-  seededMath.random = makeRandom(seed);
+  seededMath.random = constantRandom ? () => 0.3 : makeRandom(seed);
 
   const context = vm.createContext({
     document,
@@ -217,8 +217,9 @@ function main() {
   const fps = arg('--fps', 60);
   const rate = arg('--rate', 120);
   const frames = Math.round(seconds * fps);
+  const deterministic = process.argv.includes('--deterministic');
 
-  const { app, metrics } = createHarness();
+  const { app, metrics } = createHarness(12345678, deterministic);
   app.P.rows = 40;
   app.P.binsync = false;
   app.P.bins = 15;
@@ -249,6 +250,7 @@ function main() {
     kind: 'headless-pipeline-benchmark',
     simulatedSeconds: seconds,
     simulatedFps: fps,
+    randomMode: deterministic ? 'constant' : 'seeded',
     frames,
     wallMs: Number(wallMs.toFixed(1)),
     pipelineFps: Number(wallFps.toFixed(1)),
