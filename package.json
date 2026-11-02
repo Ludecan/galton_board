@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "test": "node --test tests/app.test.js"
+    "test": "node --test tests/app.test.js",
+    "perf": "node perf/bench.js",
+    "perf:deterministic": "node perf/bench.js --deterministic"
   }
 }
