@@ -9,9 +9,11 @@ approximation.
 
 ## Features
 
-- Physics-driven balls with pin ricochets, active-ball collisions, dividers,
-  floor impacts, restitution, rolling friction, trails, impact sparks, and
-  bin landing effects.
+- Physics-driven balls with energy-preserving pin ricochets, gentle active-ball
+  collisions, dividers, floor impacts, restitution, rolling friction, trails,
+  impact sparks, and bin landing effects.
+- Balls mostly drop: upward pin rebound is capped, and lateral deflection is
+  limited to a fraction of the ball's existing speed.
 - Exact binned binomial expectation (`B(rows, ½)`) overlaid with observed
   counts and a Gaussian fit.
 - χ² test against the board's binned binomial PMF and a KS test for
@@ -41,7 +43,8 @@ npm test
 
 The test harness runs the inline app against a stub DOM/canvas and checks
 board geometry, statistics, hash parsing, collision classification, share-link
-behavior, and the simulated binomial distribution.
+behavior, the simulated binomial distribution, and that pin ricochets do not
+increase mechanical energy.
 
 ## Performance benchmark
 
@@ -53,6 +56,17 @@ npm run perf:deterministic   # reproducible constant-random comparison
 The benchmark drives the real simulation/render loop for a simulated minute at
 60 fps. Canvas rasterization is stubbed, so it measures the JavaScript pipeline
 rather than GPU painting; use the in-app FPS HUD for real browser FPS.
+
+## Physics notes
+
+- Each row is still a forced fair Bernoulli step; counts come from the lane
+  state and `landX`, not from the collision outcome.
+- Pin ricochets redirect a limited fraction of the ball's existing speed, so
+  they do not add kinetic energy.
+- Upward rebound is capped, and lateral speeds are bounded, so balls mostly
+  fall rather than fly sideways or upward.
+- Active-ball collisions change the visible trajectory but not the counted
+  binomial lane.
 
 ## Controls
 
