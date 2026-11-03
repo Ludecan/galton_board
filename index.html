@@ -393,8 +393,9 @@ function spawnBall(){
 const FRIC=0.55;      // contact friction coeff (rolling)
 const PIN_REST=0.05;   // pins barely rebound; deflection is mostly lateral
 const PIN_TANGENT=0.45;
-const MAX_UP=50;       // cap any upward rebound (px/s)
+const MAX_UP=50;       // cap upward rebound at normal gravity
 const MAX_VX=900;      // cap lateral darting (px/s)
+function upCap(){ return Math.min(MAX_UP, P.grav*0.06); }
 const BB_REST=0.05;    // gentle active ball-ball restitution
 function spawnP(x,y,vn,c,up){
   if(REDUCED||pBudget<=0||balls.length>1400) return;
@@ -441,7 +442,7 @@ function resolve(b,cx,cy,cr,isPin,pid){
       if(vn<-110&&Math.random()<0.6)
         spawnP(b.x-nx*b.r,b.y-ny*b.r,-vn,'pin',false);
     }else if(vn<0){ b.vx-=vn*nx; b.vy-=vn*ny; } // cradle: absorb normal only
-    if(b.vy<-MAX_UP) b.vy=-MAX_UP;
+    if(b.vy<-upCap()) b.vy=-upCap();
     if(ny<-0.2) b.sup=true;
     return;
   }
@@ -472,8 +473,8 @@ function resolveBB(a,b){
     const j=-(1+BB_REST)*vn*0.5;
     a.vx-=j*nx; a.vy-=j*ny;
     b.vx+=j*nx; b.vy+=j*ny;
-    if(a.vy<-MAX_UP) a.vy=-MAX_UP;
-    if(b.vy<-MAX_UP) b.vy=-MAX_UP;
+    if(a.vy<-upCap()) a.vy=-upCap();
+    if(b.vy<-upCap()) b.vy=-upCap();
     if(a.vx>MAX_VX) a.vx=MAX_VX; else if(a.vx<-MAX_VX) a.vx=-MAX_VX;
     if(b.vx>MAX_VX) b.vx=MAX_VX; else if(b.vx<-MAX_VX) b.vx=-MAX_VX;
   }
@@ -529,7 +530,7 @@ function step(dt){
         }
       }
     }
-    if(b.vy<-MAX_UP) b.vy=-MAX_UP; // keep all rebounds mostly downward
+    if(b.vy<-upCap()) b.vy=-upCap(); // keep all rebounds mostly downward
     if(b.vx>MAX_VX) b.vx=MAX_VX; else if(b.vx<-MAX_VX) b.vx=-MAX_VX;
     // statistical mode: one forced fair Bernoulli step per pin row.
     // true physics mode skips this block entirely.
@@ -569,6 +570,7 @@ function step(dt){
       if(b.vy>200&&Math.abs(b.vx)<18&&pile[jb]===0){
         // vertical splash on bare floor only (can't hop across a lane)
         b.y=surf; b.vy=-b.vy*P.rest; b.w*=0.5;
+        if(b.vy<-upCap()) b.vy=-upCap();
       }else{ settle(b,bi); continue; }
     }
     const sp2=b.vx*b.vx+b.vy*b.vy;
@@ -586,6 +588,7 @@ function step(dt){
         }else{
           b.vx+=(Math.random()*2-1)*70;
           b.vy-=30+Math.random()*60;
+          if(b.vy<-upCap()) b.vy=-upCap();
         }
       }
     }else{ b.slow=0; if(b.y>L.divTop) b.stuck=0; }

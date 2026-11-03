@@ -376,6 +376,7 @@ test('zero gravity with positive drop speed stays finite', () => {
     assert.ok(Number.isFinite(b.y));
     assert.ok(Number.isFinite(b.vx));
     assert.ok(Number.isFinite(b.vy));
+    assert.ok(b.vy >= -1e-9, `zero gravity produced upward velocity ${b.vy}`);
   }
 });
 
