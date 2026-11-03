@@ -576,22 +576,14 @@ function step(dt){
     const sp2=b.vx*b.vx+b.vy*b.vy;
     if(b.sup&&sp2<300&&b.y>L.divTop&&b.dec>L.rows){ settle(b,bi); continue; }
     if(b.y>L.h+60){ balls[bi]=balls[balls.length-1]; balls.pop(); continue; } // fell out somehow
-    if(sp2<400&&b.y<L.divTop){ // stuck in pin valley → micro-shake + pop
+    if(sp2<400&&b.y<L.divTop){ // stuck in a pin valley: nudge in place, never teleport
       b.slow=(b.slow||0)+dt;
       if(b.slow>0.3){
-        b.slow=0; b.stuck=(b.stuck||0)+1;
-        if(b.stuck>=3){ // hopeless orbit → re-drop fresh from the top
-          b.stuck=0; b.slow=0; b.landX=undefined;
-          b.x=L.w/2+(Math.random()*2-1)*L.S*0.4;
-          b.y=L.padTop-24; b.vx=0; b.vy=P.speed;
-          b.tc=0; b.col=0; b.dec=1; b.px=b.x; b.py=b.y;
-        }else{
-          b.vx+=(Math.random()*2-1)*70;
-          b.vy-=30+Math.random()*60;
-          if(b.vy<-upCap()) b.vy=-upCap();
-        }
+        b.slow=0;
+        b.vx+=(Math.random()*2-1)*60;
+        b.vy=Math.max(0,b.vy)+60; // downward bias, not an upward kick
       }
-    }else{ b.slow=0; if(b.y>L.divTop) b.stuck=0; }
+    }else{ b.slow=0; }
   }
 }
 let spawnAcc=0;

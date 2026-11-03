@@ -218,7 +218,7 @@ test('divider collision is not classified as a pin by radius', () => {
 });
 
 // Regression: a re-dropped ball must clear its stuck/landing state.
-test('re-drop resets stuck counter and landing target', () => {
+test('stuck balls are nudged in place, not teleported upward', () => {
   const { app } = createHarness();
   app.P.rows = 4;
   app.P.bins = 5;
@@ -236,14 +236,13 @@ test('re-drop resets stuck counter and landing target', () => {
   b.vy = 0;
   b.w = 0;
   b.dec = 1;
-  b.stuck = 3;
   b.slow = 0.3;
-  b.landX = 123;
 
+  const y0 = b.y;
   app.step(app.SUB);
 
-  assert.equal(b.stuck, 0);
-  assert.equal(b.landX, undefined);
+  assert.ok(b.y > y0, 'stuck ball should continue downward');
+  assert.ok(b.vy >= 0, 'stuck nudge should not launch the ball upward');
 });
 
 // Behavioral guard: the forced fair-coin walk still produces the binned binomial.
