@@ -198,7 +198,8 @@ function createHarness(options = {}) {
 
   const hooks = `
     const __app = {
-      P, L,
+      P,
+      get L(){ return L; },
       get balls(){ return balls; },
       get counts(){ return counts; },
       get binVis(){ return binVis; },
