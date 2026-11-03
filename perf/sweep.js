@@ -16,13 +16,15 @@ const CANDIDATES = [
   { name: 'compressed-large',        rowAspect: 0,              ballScale: 0.25, pinRatio: 1.2,  pinTangent: 0.60, spawnSpread: 0.5, spawnVxScale: 2 },
   { name: 'triangular-wide-spawn',   rowAspect: Math.sqrt(3)/2, ballScale: 0.15, pinRatio: 0.8,  pinTangent: 0.60, spawnSpread: 0.7, spawnVxScale: 4 },
   { name: 'triangular-high-tangent', rowAspect: Math.sqrt(3)/2, ballScale: 0.12, pinRatio: 0.62, pinTangent: 0.85, spawnSpread: 0.8, spawnVxScale: 5 },
+  { name: 'gaussian', rows: 24, rowAspect: Math.sqrt(3)/2, ballScale: 0.15, pinRatio: 0.62, pinTangent: 0.46, spawnSpread: 0.4, spawnVxScale: 2 },
 ];
 
 function runCandidate(c) {
   const { app } = createHarness({ seed: 1 });
-  app.P.rows = 20;
+  const rows = c.rows ?? 20;
+  app.P.rows = rows;
   app.P.binsync = true;
-  app.P.bins = 21;
+  app.P.bins = rows + 1;
   app.P.balls = 3000;
   app.P.rate = 50;
   app.P.grav = 900;
@@ -54,6 +56,7 @@ function runCandidate(c) {
 
   return {
     name: c.name,
+    rows: app.L.rows,
     S: app.L.S,
     vs: app.L.vs,
     ballR: app.L.ballR,
@@ -73,6 +76,7 @@ const rows = CANDIDATES.map(runCandidate);
 for (const r of rows) {
   console.log(JSON.stringify({
     name: r.name,
+    rows: r.rows,
     S: Number(r.S.toFixed(2)),
     vs: Number(r.vs.toFixed(2)),
     ballR: Number(r.ballR.toFixed(2)),
