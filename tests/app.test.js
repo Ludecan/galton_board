@@ -278,6 +278,36 @@ test('simulated run preserves the binned binomial distribution', () => {
   assert.ok(s.chiP > 0.01, `chi-square p was ${s.chiP}`);
 });
 
+// Physics guard: the stochastic release and pin ricochet must not inject energy.
+test('pin ricochet does not increase mechanical energy', () => {
+  const { app } = createHarness({ seed: 123 });
+  app.P.rows = 20;
+  app.P.binsync = true;
+  app.P.bins = 21;
+  app.P.balls = 1;
+  app.P.rate = 0;
+  app.P.grav = 900;
+  app.P.rest = 0.35;
+  app.P.jit = 0.35;
+  app.P.speed = 200;
+  app.layout();
+  app.reset();
+  app.spawnBall();
+
+  const b = app.balls[0];
+  let prev = null;
+  let maxJump = 0;
+
+  for (let s = 0; s < 2000 && app.balls.length; s++) {
+    const energy = 0.5 * (b.vx * b.vx + b.vy * b.vy) - app.P.grav * b.y;
+    if (prev !== null) maxJump = Math.max(maxJump, energy - prev);
+    prev = energy;
+    app.step(app.SUB);
+  }
+
+  assert.ok(maxJump < 1, `mechanical energy increased by ${maxJump}`);
+});
+
 // Regression: particle spawning must not overspend the per-frame budget.
 test('particle budget is not overspent', () => {
   const { app } = createHarness();

@@ -388,9 +388,11 @@ function spawnBall(){
   const b=balls[balls.length-1]; b.px=b.x; b.py=b.y;
 }
 const FRIC=0.55;      // contact friction coeff (rolling)
-const PIN_REST=0.30;   // lively but not a vertical rebound stall
-const PIN_TANGENT=0.75;
-const BB_REST=0.25;    // active ball-ball restitution
+const PIN_REST=0.05;   // pins barely rebound; deflection is mostly lateral
+const PIN_TANGENT=0.45;
+const MAX_UP=50;       // cap any upward rebound (px/s)
+const MAX_VX=900;      // cap lateral darting (px/s)
+const BB_REST=0.05;    // gentle active ball-ball restitution
 function spawnP(x,y,vn,c,up){
   if(REDUCED||pBudget<=0||balls.length>1400) return;
   const n=Math.max(1,Math.min(5,1+(vn/160|0)));
@@ -419,8 +421,9 @@ function resolve(b,cx,cy,cr,isPin,pid){
   const vn=b.vx*nx+b.vy*ny;
   const tx=-ny, ty=nx;
   if(isPin){
-    // pins are lively ricochet surfaces; separate from floor/pile damping
+    // pins deflect mostly sideways; they must not launch balls upward
     if(vn<-25){
+      const spBefore=Math.hypot(b.vx,b.vy);
       const vr=-vn*PIN_REST, vt=(b.vx*tx+b.vy*ty)*PIN_TANGENT;
       b.vx=nx*vr+tx*vt; b.vy=ny*vr+ty*vt;
       b.w*=0.35;
@@ -429,10 +432,13 @@ function resolve(b,cx,cy,cr,isPin,pid){
                    Math.min(160,Math.abs(vn)+30)*0.35;
         b.vx+=kick*tx; b.vy+=kick*ty;
       }
+      const spAfter=Math.hypot(b.vx,b.vy);
+      if(spAfter>spBefore){ const k=spBefore/spAfter; b.vx*=k; b.vy*=k; }
       if(pid!==undefined){ pinHit[pid]=simClock; lastFx=simClock; }
       if(vn<-110&&Math.random()<0.6)
         spawnP(b.x-nx*b.r,b.y-ny*b.r,-vn,'pin',false);
     }else if(vn<0){ b.vx-=vn*nx; b.vy-=vn*ny; } // cradle: absorb normal only
+    if(b.vy<-MAX_UP) b.vy=-MAX_UP;
     if(ny<-0.2) b.sup=true;
     return;
   }
@@ -455,13 +461,18 @@ function resolveBB(a,b){
   const dx=b.x-a.x, dy=b.y-a.y, rr=a.r+b.r, d2=dx*dx+dy*dy;
   if(d2>=rr*rr||d2===0) return;
   const d=Math.sqrt(d2), nx=dx/d, ny=dy/d, overlap=rr-d;
-  a.x-=nx*overlap*0.5; a.y-=ny*overlap*0.5;
-  b.x+=nx*overlap*0.5; b.y+=ny*overlap*0.5;
+  const push=Math.min(overlap*0.5,L.ballR*0.35);
+  a.x-=nx*push; a.y-=ny*push;
+  b.x+=nx*push; b.y+=ny*push;
   const vn=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;
   if(vn<0){
     const j=-(1+BB_REST)*vn*0.5;
     a.vx-=j*nx; a.vy-=j*ny;
     b.vx+=j*nx; b.vy+=j*ny;
+    if(a.vy<-MAX_UP) a.vy=-MAX_UP;
+    if(b.vy<-MAX_UP) b.vy=-MAX_UP;
+    if(a.vx>MAX_VX) a.vx=MAX_VX; else if(a.vx<-MAX_VX) a.vx=-MAX_VX;
+    if(b.vx>MAX_VX) b.vx=MAX_VX; else if(b.vx<-MAX_VX) b.vx=-MAX_VX;
   }
 }
 function collideBalls(){
@@ -515,6 +526,8 @@ function step(dt){
         }
       }
     }
+    if(b.vy<-MAX_UP) b.vy=-MAX_UP; // keep all rebounds mostly downward
+    if(b.vx>MAX_VX) b.vx=MAX_VX; else if(b.vx<-MAX_VX) b.vx=-MAX_VX;
     // stochastic pin release at the pin row itself: each row is one fair
     // Bernoulli step, launched ballistically toward the chosen next flank
     while(b.dec<=L.rows && b.y>=L.padTop+(b.dec-0.5)*L.vs){
@@ -533,10 +546,14 @@ function step(dt){
         b.landX=Math.max(L.binsLeft+b.r,Math.min(L.binsRight-b.r, // smeared ±S/2
           xT+(Math.random()-0.5)*L.S));
       }
-      b.vx=(xT-b.x)/Math.max(t,0.004);
-      const vcap=Math.max(3000,L.S*150); // ricochet can be fast
-      if(b.vx>vcap)b.vx=vcap; else if(b.vx<-vcap)b.vx=-vcap;
-      b.w=side?Math.min(28,b.vx/b.r*0.5):Math.max(-28,b.vx/b.r*0.5);
+      // Redirect a fraction of the current speed; never add kinetic energy.
+      const sp=Math.hypot(b.vx,b.vy);
+      let targetVx=(xT-b.x)/Math.max(t,0.004);
+      const maxVx=Math.min(sp*0.45,MAX_VX,Math.abs(targetVx));
+      targetVx=targetVx>0?maxVx:-maxVx;
+      b.vx=targetVx;
+      b.vy=Math.sqrt(Math.max(0,sp*sp-targetVx*targetVx));
+      b.w=side?Math.min(20,b.vx/b.r*0.5):Math.max(-20,b.vx/b.r*0.5);
       b.dec++;
     }
     // per-bin virtual floor at the current pile surface (capped so it
