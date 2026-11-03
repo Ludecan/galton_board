@@ -82,8 +82,9 @@ rather than GPU painting; use the in-app FPS HUD for real browser FPS.
 - **True physics / statistical steering:** default true physics counts actual
   landings; statistical mode enforces the fair Bernoulli contract.
 - **Active ball collisions:** optional; off by default for a cleaner billiard.
-- **Gravity / Restitution / Pin jitter:** visual physics; in statistical mode
-  the fair lane choice and resulting distribution are unchanged.
+- **Gravity / Restitution / Pin jitter:** gravity is acceleration in `px/s²`;
+  `0` gives no acceleration, so use a positive drop speed to keep balls falling.
+  In statistical mode the fair lane choice is unchanged.
 - **Trails / Slow motion:** visual and playback settings.
 - **Endless bins:** old pile rows scroll off while cumulative stats remain.
 

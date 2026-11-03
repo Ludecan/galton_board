@@ -344,6 +344,41 @@ test('true physics mode counts actual landings and remains finite', () => {
   assert.ok(Number.isFinite(s.ksP));
 });
 
+test('hash parser accepts zero gravity', () => {
+  const h = createHarness();
+  const { app } = h;
+
+  h.location.hash = '#grav=0&speed=0';
+  app.readHash();
+
+  assert.equal(app.P.grav, 0);
+  assert.equal(app.P.speed, 0);
+});
+
+test('zero gravity with positive drop speed stays finite', () => {
+  const { app } = createHarness({ seed: 1 });
+  app.P.rows = 6;
+  app.P.bins = 7;
+  app.P.balls = 20;
+  app.P.rate = 0;
+  app.P.grav = 0;
+  app.P.speed = 200;
+  app.P.physics = 'statistical';
+  app.P.ballCollisions = false;
+  app.layout();
+  app.reset();
+
+  for (let i = 0; i < 20; i++) app.spawnBall();
+  for (let s = 0; s < 1000 && app.balls.length; s++) app.step(app.SUB);
+
+  for (const b of app.balls) {
+    assert.ok(Number.isFinite(b.x));
+    assert.ok(Number.isFinite(b.y));
+    assert.ok(Number.isFinite(b.vx));
+    assert.ok(Number.isFinite(b.vy));
+  }
+});
+
 test('hash parser restores physics mode and ball-collision toggle', () => {
   const h = createHarness();
   const { app } = h;

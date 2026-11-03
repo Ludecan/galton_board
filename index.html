@@ -151,7 +151,7 @@
 
     <section>
       <h2>Physics</h2>
-      <div class="row"><label for="grav" title="Downward acceleration (px/s²). Scales fall speed and impact velocity — grazes get harder, piles pack a bit differently. The fair ±1 lane choice per row is unaffected.">Gravity</label><output id="o_grav"></output><input id="grav" type="range" min="200" max="3000" step="50" title="Downward acceleration (px/s²). Changes fall speed & impact energy, not the coin-flip outcome."></div>
+      <div class="row"><label for="grav" title="Downward acceleration (px/s²). 0 = no acceleration; balls then fall at the drop speed only. With drop speed 0 and gravity 0, balls do not fall.">Gravity</label><output id="o_grav"></output><input id="grav" type="range" min="0" max="3000" step="1" title="Downward acceleration (px/s²). 0 = no acceleration; combine with a positive drop speed to keep balls moving."></div>
       <div class="row"><label for="rest" title="Bounciness of floor / wall / divider / pile impacts. 0 = clay, 0.85 = superball. Pile look changes a lot; settled counts don't.">Restitution</label><output id="o_rest"></output><input id="rest" type="range" min="0" max="0.85" step="0.05" title="Bounciness of floor/wall/divider/pile impacts. 0 = clay, 0.85 = superball."></div>
       <div class="row"><label for="jit" title="Symmetry-breaking kick when a ball strikes a pin — how wild the grazing looks. The ±1 lane decision itself is always a fair coin (random), so the distribution never tilts.">Pin jitter</label><output id="o_jit"></output><input id="jit" type="range" min="0" max="1" step="0.05" title="Chaos strength on pin strikes. Looks wilder, distribution identical — each row is a fair coin flip either way."></div>
       <label class="chk" title="True physics removes the forced fair-coin steering. Counts are then whatever the physical board produces; χ² may reject when the board is biased."><input type="checkbox" id="truephysics" checked> true physics (no steering)</label>
@@ -541,7 +541,7 @@ function step(dt){
       // full-row flight time from this pin to the next pin row
       const dy=Math.max((j<L.rows? L.padTop+(j+0.5)*L.vs : L.floorY)-b.y,
                        L.vs*0.85);
-      const t=(-b.vy+Math.sqrt(b.vy*b.vy+2*g*dy))/g;
+      const t=g>0?(-b.vy+Math.sqrt(b.vy*b.vy+2*g*dy))/g:(b.vy>0?dy/b.vy:0.05);
       const flank=side?(L.ballR+L.pinR)*1.08:-(L.ballR+L.pinR)*1.08;
       let xT=L.w/2+(b.col-j/2)*L.S+(j<L.rows?flank:0)
              +(j<L.rows?(Math.random()-0.5)*Math.max(0,L.S-L.binW)*0.35:0);

@@ -115,7 +115,7 @@ function createHarness(options = {}) {
     balls: [100, 20000],
     rate: [1, 120],
     speed: [0, 300],
-    grav: [200, 3000],
+    grav: [0, 3000],
     rest: [0, 0.85],
     jit: [0, 1],
   };

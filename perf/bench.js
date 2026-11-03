@@ -128,7 +128,7 @@ function createHarness(seed = 12345678, constantRandom = false) {
   ];
   const ranges = {
     rows: [2, 40], bins: [2, 48], balls: [100, 20000],
-    rate: [1, 120], speed: [0, 300], grav: [200, 3000],
+    rate: [1, 120], speed: [0, 300], grav: [0, 3000],
     rest: [0, 0.85], jit: [0, 1],
   };
   for (const id of ids) elements.set(id, makeElement(id));
