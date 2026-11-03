@@ -9,8 +9,9 @@ approximation.
 
 ## Features
 
-- Physics-driven balls with pins, dividers, floor impacts, restitution,
-  rolling friction, trails, impact sparks, and bin landing effects.
+- Physics-driven balls with pin ricochets, active-ball collisions, dividers,
+  floor impacts, restitution, rolling friction, trails, impact sparks, and
+  bin landing effects.
 - Exact binned binomial expectation (`B(rows, ½)`) overlaid with observed
   counts and a Gaussian fit.
 - χ² test against the board's binned binomial PMF and a KS test for

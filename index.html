@@ -387,7 +387,10 @@ function spawnBall(){
   });
   const b=balls[balls.length-1]; b.px=b.x; b.py=b.y;
 }
-const FRIC=0.55; // contact friction coeff (rolling)
+const FRIC=0.55;      // contact friction coeff (rolling)
+const PIN_REST=0.30;   // lively but not a vertical rebound stall
+const PIN_TANGENT=0.75;
+const BB_REST=0.25;    // active ball-ball restitution
 function spawnP(x,y,vn,c,up){
   if(REDUCED||pBudget<=0||balls.length>1400) return;
   const n=Math.max(1,Math.min(5,1+(vn/160|0)));
@@ -416,15 +419,14 @@ function resolve(b,cx,cy,cr,isPin,pid){
   const vn=b.vx*nx+b.vy*ny;
   const tx=-ny, ty=nx;
   if(isPin){
-    // soft pins: a real impact is damped (no ricochet chaos); a ball
-    // cradled or sliding against the pin keeps its tangential motion
+    // pins are lively ricochet surfaces; separate from floor/pile damping
     if(vn<-25){
-      const vr=-vn*P.rest, vt=(b.vx*tx+b.vy*ty)*0.4;
+      const vr=-vn*PIN_REST, vt=(b.vx*tx+b.vy*ty)*PIN_TANGENT;
       b.vx=nx*vr+tx*vt; b.vy=ny*vr+ty*vt;
-      b.w*=0.2;
-      if(ny<-0.2){ // symmetry-breaking kick at impact
+      b.w*=0.35;
+      if(ny<-0.2){ // small symmetry-breaking kick at impact
         const kick=(Math.random()+Math.random()+Math.random()-1.5)*P.jit*
-                   Math.min(200,Math.abs(vn)+30)*0.5;
+                   Math.min(160,Math.abs(vn)+30)*0.35;
         b.vx+=kick*tx; b.vy+=kick*ty;
       }
       if(pid!==undefined){ pinHit[pid]=simClock; lastFx=simClock; }
@@ -448,6 +450,38 @@ function resolve(b,cx,cy,cr,isPin,pid){
   let jt=-vtrel/3.5, lim=FRIC*jn;
   if(jt>lim)jt=lim; else if(jt<-lim)jt=-lim;
   b.vx+=jt*tx; b.vy+=jt*ty; b.w+=-2.5*jt/b.r;
+}
+function resolveBB(a,b){
+  const dx=b.x-a.x, dy=b.y-a.y, rr=a.r+b.r, d2=dx*dx+dy*dy;
+  if(d2>=rr*rr||d2===0) return;
+  const d=Math.sqrt(d2), nx=dx/d, ny=dy/d, overlap=rr-d;
+  a.x-=nx*overlap*0.5; a.y-=ny*overlap*0.5;
+  b.x+=nx*overlap*0.5; b.y+=ny*overlap*0.5;
+  const vn=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;
+  if(vn<0){
+    const j=-(1+BB_REST)*vn*0.5;
+    a.vx-=j*nx; a.vy-=j*ny;
+    b.vx+=j*nx; b.vy+=j*ny;
+  }
+}
+function collideBalls(){
+  const n=balls.length;
+  if(n<2) return;
+  const cellSize=Math.max(2,L.ballR*2.5);
+  const bgrid=new Map();
+  for(let i=0;i<n;i++){
+    const b=balls[i];
+    const k=((Math.floor(b.x/cellSize)+1024)<<13)|(Math.floor(b.y/cellSize)+1024);
+    let arr=bgrid.get(k); if(!arr) bgrid.set(k,arr=[]); arr.push(i);
+  }
+  for(let i=0;i<n;i++){
+    const b=balls[i];
+    const cx=Math.floor(b.x/cellSize), cy=Math.floor(b.y/cellSize);
+    for(let gx=cx-1;gx<=cx+1;gx++)for(let gy=cy-1;gy<=cy+1;gy++){
+      const arr=bgrid.get(((gx+1024)<<13)|(gy+1024)); if(!arr) continue;
+      for(const j of arr){ if(j<=i) continue; resolveBB(b,balls[j]); }
+    }
+  }
 }
 function step(dt){
   spawnAcc+=P.rate*dt;
@@ -481,30 +515,28 @@ function step(dt){
         }
       }
     }
-    // stochastic pin release: mid-gap lines, in free flight — each one
-    // is a fair Bernoulli step, aimed to graze the chosen flank of the
-    // next pin (grazing keeps landing scatter below one lane width)
-    while(b.dec<=L.rows && b.y>=L.padTop+b.dec*L.vs){
+    // stochastic pin release at the pin row itself: each row is one fair
+    // Bernoulli step, launched ballistically toward the chosen next flank
+    while(b.dec<=L.rows && b.y>=L.padTop+(b.dec-0.5)*L.vs){
       const j=b.dec;
       const side=Math.random()<0.5?0:1;
       b.col+=side;
-      // aim over a full row's fall time — never the collapsed "already at
-      // the line" window, that's what made balls snap sideways
+      // full-row flight time from this pin to the next pin row
       const dy=Math.max((j<L.rows? L.padTop+(j+0.5)*L.vs : L.floorY)-b.y,
                        L.vs*0.85);
       const t=(-b.vy+Math.sqrt(b.vy*b.vy+2*g*dy))/g;
       const flank=side?(L.ballR+L.pinR)*1.08:-(L.ballR+L.pinR)*1.08;
       let xT=L.w/2+(b.col-j/2)*L.S+(j<L.rows?flank:0)
-             +(j<L.rows?(Math.random()-0.5)*Math.max(0,L.S-L.binW)*0.85:0);
+             +(j<L.rows?(Math.random()-0.5)*Math.max(0,L.S-L.binW)*0.35:0);
       xT=Math.max(L.binsLeft+b.r+1,Math.min(L.binsRight-b.r-1,xT));
       if(j===L.rows){ // final flight: exact ballistic landing point,
         b.landX=Math.max(L.binsLeft+b.r,Math.min(L.binsRight-b.r, // smeared ±S/2
           xT+(Math.random()-0.5)*L.S));
       }
-      b.vx=(xT-b.x)/Math.max(t,0.02);
-      const vcap=Math.max(640,L.S*40); // wide lanes need faster aiming
+      b.vx=(xT-b.x)/Math.max(t,0.004);
+      const vcap=Math.max(3000,L.S*150); // ricochet can be fast
       if(b.vx>vcap)b.vx=vcap; else if(b.vx<-vcap)b.vx=-vcap;
-      b.w=side?Math.min(20,b.vx/b.r*0.5):Math.max(-20,b.vx/b.r*0.5);
+      b.w=side?Math.min(28,b.vx/b.r*0.5):Math.max(-28,b.vx/b.r*0.5);
       b.dec++;
     }
     // per-bin virtual floor at the current pile surface (capped so it
@@ -1137,6 +1169,7 @@ function frame(ts){
     physAcc+=sdt; let n=0;
     while(physAcc>=SUB&&n<16){ step(SUB); physAcc-=SUB; n++; }
     if(n>=16) physAcc=0; // spiral-of-death guard
+    if(balls.length>1) collideBalls(); // one active-ball collision pass per frame
     if(parts) for(let i=0;i<PMAX;i++){ const p=parts[i]; if(!p.a) continue;
       p.vy+=(p.up?-240:P.grav*0.4)*sdt;
       p.vx*=1-2.4*sdt; p.vy*=1-1.6*sdt;

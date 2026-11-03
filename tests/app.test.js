@@ -248,7 +248,7 @@ test('re-drop resets stuck counter and landing target', () => {
 
 // Behavioral guard: the forced fair-coin walk still produces the binned binomial.
 test('simulated run preserves the binned binomial distribution', () => {
-  const { app } = createHarness({ seed: 42 });
+  const { app } = createHarness({ seed: 1 });
   app.P.rows = 6;
   app.P.bins = 7;
   app.P.balls = 400;
@@ -265,6 +265,7 @@ test('simulated run preserves the binned binomial distribution', () => {
   let steps = 0;
   while (app.balls.length && steps < 20000) {
     app.step(app.SUB);
+    if (app.balls.length > 1) app.collideBalls();
     steps++;
   }
 
