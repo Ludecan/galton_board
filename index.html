@@ -382,9 +382,12 @@ function binOfX(x){ return Math.max(0,Math.min(L.bins-1,Math.floor((x-L.binsLeft
 function spawnBall(){
   if(spawned>=P.balls) return;
   spawned++;
+  const sx=L.w/2+(Math.random()-0.5)*L.S*0.4;
+  // A tiny, symmetric lateral release prevents an exactly vertical pin-apex hit.
+  const svx=(Math.random()<0.5?-1:1)*(0.03+Math.random()*0.12)*L.S;
   balls.push({
-    x:L.w/2+(Math.random()-0.5)*L.S*0.4, y:L.padTop-26+Math.random()*4,
-    vx:0, vy:P.speed, w:0, a:Math.random()*6.28, r:L.ballR, ci:spawned%6,
+    x:sx, y:L.padTop-26+Math.random()*4,
+    vx:svx, vy:P.speed, w:0, a:Math.random()*6.28, r:L.ballR, ci:spawned%6,
     sup:false, tr:new Float32Array(24), th:0, tc:0,
     idx:spawned, col:0, dec:1, px:0, py:0
   });

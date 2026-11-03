@@ -279,6 +279,22 @@ test('simulated run preserves the binned binomial distribution', () => {
   assert.ok(s.chiP > 0.01, `chi-square p was ${s.chiP}`);
 });
 
+test('spawn release is never exactly vertical', () => {
+  const { app } = createHarness({ seed: 3 });
+  app.P.rows = 10;
+  app.P.bins = 11;
+  app.P.speed = 200;
+  app.layout();
+  app.reset();
+
+  for (let i = 0; i < 100; i++) {
+    app.spawnBall();
+    const b = app.balls[app.balls.length - 1];
+    assert.notEqual(b.vx, 0);
+    assert.equal(b.vy, app.P.speed);
+  }
+});
+
 // Physics guard: the stochastic release and pin ricochet must not inject energy.
 test('pin ricochet does not increase mechanical energy', () => {
   const { app } = createHarness({ seed: 123 });

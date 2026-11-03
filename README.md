@@ -67,6 +67,8 @@ rather than GPU painting; use the in-app FPS HUD for real browser FPS.
   physical board is biased.
 - **Statistical** mode forces one fair Bernoulli step per row and counts from
   the forced lane state, yielding the exact binned binomial expectation.
+- Each release has a tiny symmetric lateral velocity, so a ball never travels
+  perfectly vertically into a pin apex.
 - Pin ricochets redirect a limited fraction of the ball's existing speed, so
   they do not add kinetic energy.
 - Upward rebound is capped, and lateral speeds are bounded, so balls mostly
