@@ -154,6 +154,8 @@
       <div class="row"><label for="grav" title="Downward acceleration (px/s²). Scales fall speed and impact velocity — grazes get harder, piles pack a bit differently. The fair ±1 lane choice per row is unaffected.">Gravity</label><output id="o_grav"></output><input id="grav" type="range" min="200" max="3000" step="50" title="Downward acceleration (px/s²). Changes fall speed & impact energy, not the coin-flip outcome."></div>
       <div class="row"><label for="rest" title="Bounciness of floor / wall / divider / pile impacts. 0 = clay, 0.85 = superball. Pile look changes a lot; settled counts don't.">Restitution</label><output id="o_rest"></output><input id="rest" type="range" min="0" max="0.85" step="0.05" title="Bounciness of floor/wall/divider/pile impacts. 0 = clay, 0.85 = superball."></div>
       <div class="row"><label for="jit" title="Symmetry-breaking kick when a ball strikes a pin — how wild the grazing looks. The ±1 lane decision itself is always a fair coin (random), so the distribution never tilts.">Pin jitter</label><output id="o_jit"></output><input id="jit" type="range" min="0" max="1" step="0.05" title="Chaos strength on pin strikes. Looks wilder, distribution identical — each row is a fair coin flip either way."></div>
+      <label class="chk" title="True physics removes the forced fair-coin steering. Counts are then whatever the physical board produces; χ² may reject when the board is biased."><input type="checkbox" id="truephysics" checked> true physics (no steering)</label>
+      <label class="chk" title="Active ball-ball collisions. Off by default for a cleaner physical billiard; on adds more visual interaction and more χ² bias risk."><input type="checkbox" id="ballcol"> active ball collisions</label>
       <label class="chk" title="¼× simulation speed, for watching individual bounces."><input type="checkbox" id="slow"> slow motion (¼×)</label>
       <label class="chk" title="auto = theme default (neon / elemental / vaporwave on). on / off force it for every theme.">trails
         <select id="trails">
@@ -291,7 +293,8 @@ const THEMES={
 
 /* ============ state ============ */
 const P={theme:'vaporwave',rows:40,binsync:false,bins:15,balls:20000,rate:5,speed:200,
-  grav:3000,rest:0.25,jit:0.25,slow:false,auto:true,trails:'auto',endless:false};
+  grav:3000,rest:0.25,jit:0.25,slow:false,auto:true,trails:'auto',endless:false,
+  physics:'true',ballCollisions:false};
 const REDUCED = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 let paused=false, spawned=0;
 let balls=[], counts=[], binVis=[], settledN=0;
@@ -528,9 +531,10 @@ function step(dt){
     }
     if(b.vy<-MAX_UP) b.vy=-MAX_UP; // keep all rebounds mostly downward
     if(b.vx>MAX_VX) b.vx=MAX_VX; else if(b.vx<-MAX_VX) b.vx=-MAX_VX;
-    // stochastic pin release at the pin row itself: each row is one fair
-    // Bernoulli step, launched ballistically toward the chosen next flank
-    while(b.dec<=L.rows && b.y>=L.padTop+(b.dec-0.5)*L.vs){
+    // statistical mode: one forced fair Bernoulli step per pin row.
+    // true physics mode skips this block entirely.
+    if(P.physics==='statistical'){
+      while(b.dec<=L.rows && b.y>=L.padTop+(b.dec-0.5)*L.vs){
       const j=b.dec;
       const side=Math.random()<0.5?0:1;
       b.col+=side;
@@ -555,6 +559,7 @@ function step(dt){
       b.vy=Math.sqrt(Math.max(0,sp*sp-targetVx*targetVx));
       b.w=side?Math.min(20,b.vx/b.r*0.5):Math.max(-20,b.vx/b.r*0.5);
       b.dec++;
+      }
     }
     // per-bin virtual floor at the current pile surface (capped so it
     // never rises into the decision zone → every ball completes its
@@ -736,7 +741,7 @@ function rowSlotOrder(j,tp,n){
   return perm;
 }
 function settle(b,bi){
-  const lx=b.landX!==undefined?b.landX:b.x;
+  const lx=P.physics==='true'?b.x:(b.landX!==undefined?b.landX:b.x);
   const j=binOfX(lx);
   balls[bi]=balls[balls.length-1]; balls.pop();
   counts[j]++; settledN++;
@@ -1186,7 +1191,7 @@ function frame(ts){
     physAcc+=sdt; let n=0;
     while(physAcc>=SUB&&n<16){ step(SUB); physAcc-=SUB; n++; }
     if(n>=16) physAcc=0; // spiral-of-death guard
-    if(balls.length>1) collideBalls(); // one active-ball collision pass per frame
+    if(P.ballCollisions && balls.length>1) collideBalls(); // optional active-ball pass
     if(parts) for(let i=0;i<PMAX;i++){ const p=parts[i]; if(!p.a) continue;
       p.vy+=(p.up?-240:P.grav*0.4)*sdt;
       p.vx*=1-2.4*sdt; p.vy*=1-1.6*sdt;
@@ -1218,6 +1223,8 @@ function syncUI(){
   }
   document.getElementById('binsync').checked=P.binsync;
   document.getElementById('endless').checked=P.endless;
+  document.getElementById('truephysics').checked=P.physics==='true';
+  document.getElementById('ballcol').checked=P.ballCollisions;
   document.getElementById('slow').checked=P.slow;
   document.getElementById('trails').value=P.trails;
   document.querySelectorAll('.chip').forEach(c=>c.classList.toggle('on',c.dataset.t===P.theme));
@@ -1258,6 +1265,13 @@ document.getElementById('binsync').addEventListener('change',e=>{
   P.binsync=e.target.checked;
   if(P.binsync) P.bins=Math.min(48,P.rows+1);
   structural(); syncUI(); writeHash();
+});
+document.getElementById('truephysics').addEventListener('change',e=>{
+  P.physics=e.target.checked?'true':'statistical';
+  reset(); syncUI(); writeHash();
+});
+document.getElementById('ballcol').addEventListener('change',e=>{
+  P.ballCollisions=e.target.checked; writeHash();
 });
 document.getElementById('slow').addEventListener('change',e=>{P.slow=e.target.checked; writeHash();});
 document.getElementById('endless').addEventListener('change',e=>{
@@ -1305,9 +1319,11 @@ for(const name of Object.keys(THEMES)){
 }
 const PRESETS={
   showcase:{rows:20,binsync:true,bins:21,balls:4000,rate:40,speed:200,
-    grav:900,rest:0.35,jit:0.35,slow:false,trails:'on',endless:false},
+    grav:900,rest:0.35,jit:0.35,slow:false,trails:'on',endless:false,
+    physics:'true',ballCollisions:false},
   stats:{rows:40,binsync:false,bins:15,balls:20000,rate:5,speed:200,
-    grav:3000,rest:0.25,jit:0.25,slow:false,trails:'auto',endless:false}
+    grav:3000,rest:0.25,jit:0.25,slow:false,trails:'auto',endless:false,
+    physics:'statistical',ballCollisions:false}
 };
 for(const name of Object.keys(PRESETS)){
   const b=document.createElement('button');
@@ -1323,11 +1339,10 @@ for(const name of Object.keys(PRESETS)){
   document.getElementById('presets').appendChild(b);
 }
 document.getElementById('statNote').innerHTML=
-  'Free flight, pin grazing, floor &amp; divider impacts, restitution and piles are integrated physically; '+
-  'each pin row applies a stochastic release (surface-roughness model): one fair ±1-lane Bernoulli step, '+
-  'after which the ball flies ballistically to a grazed lane. χ² validates the settled counts against the exact '+
-  'binned B(rows,&frac12) pmf; KS tests gaussianity vs N(μ₀,σ₀) with continuity jitter. '+
-  'Few rows &rarr; binomial is real but far from normal &mdash; watch χ² stay green while KS turns amber. Share settings via URL.';
+  'Free flight, pin ricochets, floor &amp; divider impacts, restitution and piles are integrated physically. '+
+  'True physics counts the actual landing bin; statistical mode instead forces one fair ±1-lane Bernoulli step per row. '+
+  'χ² compares settled counts against the exact binned B(rows,&frac12) pmf, so it can reject when the true physical board is biased; '+
+  'KS tests gaussianity vs N(μ₀,σ₀) with continuity jitter. Few rows &rarr; binomial is real but far from normal. Share settings via URL.';
 
 /* ============ hash ============ */
 let hashT=0;
@@ -1338,6 +1353,7 @@ function buildHash(){
   q.set('speed',P.speed); q.set('grav',P.grav); q.set('rest',P.rest);
   q.set('jit',P.jit); q.set('slow',P.slow?1:0); q.set('auto',paused?0:1);
   q.set('trails',P.trails); q.set('endless',P.endless?1:0);
+  q.set('physics',P.physics); q.set('ballcol',P.ballCollisions?1:0);
   return '#'+q.toString();
 }
 function writeHashNow(){
@@ -1369,6 +1385,8 @@ function readHash(){
   if(q.has('auto'))P.auto=q.get('auto')==='1';
   if(['auto','on','off'].includes(q.get('trails')))P.trails=q.get('trails');
   if(q.has('endless'))P.endless=q.get('endless')==='1';
+  if(q.get('physics')==='true'||q.get('physics')==='statistical')P.physics=q.get('physics');
+  if(q.has('ballcol'))P.ballCollisions=q.get('ballcol')==='1';
   if(P.binsync)P.bins=Math.min(48,P.rows+1);
 }
 

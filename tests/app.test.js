@@ -256,6 +256,8 @@ test('simulated run preserves the binned binomial distribution', () => {
   app.P.grav = 3000;
   app.P.rest = 0.25;
   app.P.jit = 0.25;
+  app.P.physics = 'statistical';
+  app.P.ballCollisions = true;
   app.P.speed = 200;
   app.layout();
   app.reset();
@@ -290,6 +292,7 @@ test('pin ricochet does not increase mechanical energy', () => {
   app.P.rest = 0.35;
   app.P.jit = 0.35;
   app.P.speed = 200;
+  app.P.physics = 'statistical';
   app.layout();
   app.reset();
   app.spawnBall();
@@ -306,6 +309,50 @@ test('pin ricochet does not increase mechanical energy', () => {
   }
 
   assert.ok(maxJump < 1, `mechanical energy increased by ${maxJump}`);
+});
+
+test('true physics mode counts actual landings and remains finite', () => {
+  const { app } = createHarness({ seed: 1 });
+  app.P.rows = 6;
+  app.P.bins = 7;
+  app.P.balls = 400;
+  app.P.rate = 0;
+  app.P.grav = 3000;
+  app.P.rest = 0.25;
+  app.P.jit = 0.25;
+  app.P.speed = 200;
+  app.P.physics = 'true';
+  app.P.ballCollisions = false;
+  app.layout();
+  app.reset();
+
+  for (let i = 0; i < 400; i++) app.spawnBall();
+
+  let steps = 0;
+  while (app.balls.length && steps < 20000) {
+    app.step(app.SUB);
+    steps++;
+  }
+
+  assert.equal(app.balls.length, 0);
+  assert.equal(app.settledN, 400);
+  assert.equal(app.counts.reduce((a, b) => a + b, 0), 400);
+
+  const s = app.computeStats();
+  assert.ok(s);
+  assert.ok(Number.isFinite(s.chiP));
+  assert.ok(Number.isFinite(s.ksP));
+});
+
+test('hash parser restores physics mode and ball-collision toggle', () => {
+  const h = createHarness();
+  const { app } = h;
+
+  h.location.hash = '#physics=statistical&ballcol=1';
+  app.readHash();
+
+  assert.equal(app.P.physics, 'statistical');
+  assert.equal(app.P.ballCollisions, true);
 });
 
 // Regression: particle spawning must not overspend the per-frame budget.

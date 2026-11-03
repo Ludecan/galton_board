@@ -14,6 +14,9 @@ approximation.
   impact sparks, and bin landing effects.
 - Balls mostly drop: upward pin rebound is capped, and lateral deflection is
   limited to a fraction of the ball's existing speed.
+- Physics mode toggle: **true physics** (default) counts actual landings;
+  **statistical** mode enforces one fair Bernoulli step per row.
+- Optional active-ball collisions, off by default in true-physics mode.
 - Exact binned binomial expectation (`B(rows, ½)`) overlaid with observed
   counts and a Gaussian fit.
 - χ² test against the board's binned binomial PMF and a KS test for
@@ -43,8 +46,8 @@ npm test
 
 The test harness runs the inline app against a stub DOM/canvas and checks
 board geometry, statistics, hash parsing, collision classification, share-link
-behavior, the simulated binomial distribution, and that pin ricochets do not
-increase mechanical energy.
+behavior, the statistical-mode binomial distribution, true-physics completion,
+and that pin ricochets do not increase mechanical energy.
 
 ## Performance benchmark
 
@@ -59,22 +62,28 @@ rather than GPU painting; use the in-app FPS HUD for real browser FPS.
 
 ## Physics notes
 
-- Each row is still a forced fair Bernoulli step; counts come from the lane
-  state and `landX`, not from the collision outcome.
+- **True physics** is the default: counts come from the actual landing bin.
+  The ideal binomial is still shown for comparison, so χ² can reject when the
+  physical board is biased.
+- **Statistical** mode forces one fair Bernoulli step per row and counts from
+  the forced lane state, yielding the exact binned binomial expectation.
 - Pin ricochets redirect a limited fraction of the ball's existing speed, so
   they do not add kinetic energy.
 - Upward rebound is capped, and lateral speeds are bounded, so balls mostly
   fall rather than fly sideways or upward.
-- Active-ball collisions change the visible trajectory but not the counted
-  binomial lane.
+- Active-ball collisions are optional; when enabled they add visual
+  interaction and can increase χ² bias in true-physics mode.
 
 ## Controls
 
 - **Rows (floors):** each row is one fair coin flip.
 - **bins = rows + 1:** one counting bin per landing lane.
 - **Balls / Rate:** total balls and release throughput.
-- **Gravity / Restitution / Pin jitter:** visual physics; the fair lane choice
-  and resulting distribution are unchanged.
+- **True physics / statistical steering:** default true physics counts actual
+  landings; statistical mode enforces the fair Bernoulli contract.
+- **Active ball collisions:** optional; off by default for a cleaner billiard.
+- **Gravity / Restitution / Pin jitter:** visual physics; in statistical mode
+  the fair lane choice and resulting distribution are unchanged.
 - **Trails / Slow motion:** visual and playback settings.
 - **Endless bins:** old pile rows scroll off while cumulative stats remain.
 
