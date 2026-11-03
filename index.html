@@ -294,7 +294,10 @@ const THEMES={
 /* ============ state ============ */
 const P={theme:'vaporwave',rows:40,binsync:false,bins:15,balls:20000,rate:5,speed:200,
   grav:3000,rest:0.25,jit:0.25,slow:false,auto:true,trails:'auto',endless:false,
-  physics:'true',ballCollisions:false};
+  physics:'true',ballCollisions:false,
+  // parametric layout defaults (internal; tuned by the Gaussian sweep)
+  rowAspect:0, ballScale:0.12, pinRatio:0.62, spawnSpread:0.4, spawnVxScale:1,
+  pinRest:0.05, pinTangent:0.45};
 const REDUCED = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 let paused=false, spawned=0;
 let balls=[], counts=[], binVis=[], settledN=0;
@@ -329,14 +332,21 @@ function layout(){
   const padX=26, padTop=46;
   const floorY=Math.round(h-Math.max(24,Math.min(40,h*0.045)));
   const availW=w-padX*2, availH=floorY-padTop-Math.max(110,h*0.30);
-  let S=Math.min(availW*0.85/(rows+1),52); // board spans 85% of stage width
-  const vs=Math.min(S*0.87, availH/(rows+0.4));
+  let S, vs;
+  if(P.rowAspect>0){
+    S=Math.min(availW*0.85/(rows+1), availH/((rows+0.4)*P.rowAspect),52);
+    vs=S*P.rowAspect;
+  }else{
+    S=Math.min(availW*0.85/(rows+1),52);
+    vs=Math.min(S*0.87, availH/(rows+0.4));
+  }
   const binsWidth=Math.min(availW,(rows+1)*S);
   const binW=binsWidth/bins;
   const dw=Math.min(2.2,binW*0.12);
-  const ballR=Math.max(1.6,Math.min(7,S*0.12,binW*0.26));
+  const ballR=Math.max(1.6,Math.min(7,S*P.ballScale,binW*0.26));
+  const pinR=Math.min(7,ballR*P.pinRatio);
   const binsLeft=w/2-binsWidth/2;
-  L={w,h,rows,bins,padTop,floorY,S,vs,binW,dw,ballR,pinR:ballR*0.62,
+  L={w,h,rows,bins,padTop,floorY,S,vs,binW,dw,ballR,pinR,
     binsLeft,binsRight:binsLeft+binsWidth,
     divTop:floorY-Math.max(34,h*0.15),
     cell:Math.max(15,S,binW)};
@@ -382,9 +392,9 @@ function binOfX(x){ return Math.max(0,Math.min(L.bins-1,Math.floor((x-L.binsLeft
 function spawnBall(){
   if(spawned>=P.balls) return;
   spawned++;
-  const sx=L.w/2+(Math.random()-0.5)*L.S*0.4;
-  // A tiny, symmetric lateral release prevents an exactly vertical pin-apex hit.
-  const svx=(Math.random()<0.5?-1:1)*(0.03+Math.random()*0.12)*L.S;
+  const sx=L.w/2+(Math.random()-0.5)*L.S*P.spawnSpread;
+  // A symmetric lateral release prevents an exactly vertical pin-apex hit.
+  const svx=(Math.random()<0.5?-1:1)*(0.03+Math.random()*0.12)*L.S*P.spawnVxScale;
   balls.push({
     x:sx, y:L.padTop-26+Math.random()*4,
     vx:svx, vy:P.speed, w:0, a:Math.random()*6.28, r:L.ballR, ci:spawned%6,
@@ -394,8 +404,7 @@ function spawnBall(){
   const b=balls[balls.length-1]; b.px=b.x; b.py=b.y;
 }
 const FRIC=0.55;      // contact friction coeff (rolling)
-const PIN_REST=0.05;   // pins barely rebound; deflection is mostly lateral
-const PIN_TANGENT=0.45;
+
 const MAX_UP=50;       // cap upward rebound at normal gravity
 const MAX_VX=900;      // cap lateral darting (px/s)
 function upCap(){ return Math.min(MAX_UP, P.grav*0.06); }
@@ -431,7 +440,7 @@ function resolve(b,cx,cy,cr,isPin,pid){
     // pins deflect mostly sideways; they must not launch balls upward
     if(vn<-25){
       const spBefore=Math.hypot(b.vx,b.vy);
-      const vr=-vn*PIN_REST, vt=(b.vx*tx+b.vy*ty)*PIN_TANGENT;
+      const vr=-vn*P.pinRest, vt=(b.vx*tx+b.vy*ty)*P.pinTangent;
       b.vx=nx*vr+tx*vt; b.vy=ny*vr+ty*vt;
       b.w*=0.35;
       if(ny<-0.2){ // small symmetry-breaking kick at impact
@@ -1318,10 +1327,19 @@ for(const name of Object.keys(THEMES)){
 const PRESETS={
   showcase:{rows:20,binsync:true,bins:21,balls:4000,rate:40,speed:200,
     grav:900,rest:0.35,jit:0.35,slow:false,trails:'on',endless:false,
-    physics:'true',ballCollisions:false},
+    physics:'true',ballCollisions:false,
+    rowAspect:0,ballScale:0.12,pinRatio:0.62,pinTangent:0.45,
+    spawnSpread:0.4,spawnVxScale:1},
   stats:{rows:40,binsync:false,bins:15,balls:20000,rate:5,speed:200,
     grav:3000,rest:0.25,jit:0.25,slow:false,trails:'auto',endless:false,
-    physics:'statistical',ballCollisions:false}
+    physics:'statistical',ballCollisions:false,
+    rowAspect:0,ballScale:0.12,pinRatio:0.62,pinTangent:0.45,
+    spawnSpread:0.4,spawnVxScale:1},
+  gaussian:{rows:24,binsync:true,bins:25,balls:3000,rate:60,speed:200,
+    grav:900,rest:0.35,jit:0.35,slow:false,trails:'on',endless:false,
+    physics:'true',ballCollisions:false,
+    rowAspect:Math.sqrt(3)/2,ballScale:0.15,pinRatio:0.62,
+    pinTangent:0.46,spawnSpread:0.4,spawnVxScale:2}
 };
 for(const name of Object.keys(PRESETS)){
   const b=document.createElement('button');
@@ -1352,6 +1370,10 @@ function buildHash(){
   q.set('jit',P.jit); q.set('slow',P.slow?1:0); q.set('auto',paused?0:1);
   q.set('trails',P.trails); q.set('endless',P.endless?1:0);
   q.set('physics',P.physics); q.set('ballcol',P.ballCollisions?1:0);
+  q.set('rowAspect',P.rowAspect); q.set('ballScale',P.ballScale);
+  q.set('pinRatio',P.pinRatio); q.set('pinTangent',P.pinTangent);
+  q.set('spawnSpread',P.spawnSpread); q.set('spawnVxScale',P.spawnVxScale);
+  q.set('pinRest',P.pinRest);
   return '#'+q.toString();
 }
 function writeHashNow(){
@@ -1385,6 +1407,14 @@ function readHash(){
   if(q.has('endless'))P.endless=q.get('endless')==='1';
   if(q.get('physics')==='true'||q.get('physics')==='statistical')P.physics=q.get('physics');
   if(q.has('ballcol'))P.ballCollisions=q.get('ballcol')==='1';
+  for(const [k,min,max] of [
+    ['rowAspect',0,1.5], ['ballScale',0.05,0.5], ['pinRatio',0,2],
+    ['pinTangent',0,1], ['spawnSpread',0,1], ['spawnVxScale',0,10],
+    ['pinRest',0,1]
+  ]){
+    const v=num(k);
+    if(v!==null&&v>=min&&v<=max) P[k]=v;
+  }
   if(P.binsync)P.bins=Math.min(48,P.rows+1);
 }
 

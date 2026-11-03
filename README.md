@@ -25,7 +25,11 @@ approximation.
 - Adjustable rows, bins, drop rate, gravity, restitution, pin jitter, and
   slow motion.
 - Shareable settings via URL hash.
-- `SHOWCASE` and `STAT RUN` presets.
+- `SHOWCASE`, `STAT RUN`, and `GAUSSIAN` presets.
+- Parametric triangular layout: lane spacing, row aspect, pin/ball ratios,
+  tangential pin response, and release spread can be tuned and shared via URL.
+- The `GAUSSIAN` preset uses 24 rows / 25 bins with a strict triangular lattice
+  and tuned pin/ball scaling for a Gaussian-like stationary distribution.
 - Responsive layout, reduced-motion support, and mobile pointer tooltips.
 
 ## Run locally
@@ -54,6 +58,7 @@ and that pin ricochets do not increase mechanical energy.
 ```bash
 npm run perf                 # seeded stochastic 60s run at 120 balls/s
 npm run perf:deterministic   # reproducible constant-random comparison
+npm run perf:sweep           # parametric Gaussian-layout sweep
 ```
 
 The benchmark drives the real simulation/render loop for a simulated minute at
@@ -75,9 +80,15 @@ rather than GPU painting; use the in-app FPS HUD for real browser FPS.
   fall rather than fly sideways or upward.
 - Active-ball collisions are optional; when enabled they add visual
   interaction and can increase χ² bias in true-physics mode.
+- The `GAUSSIAN` preset is a true-physics board tuned to a symmetric,
+  bell-shaped stationary distribution. Its χ² may still reject because the
+  physical distribution is not the exact ideal binomial; KS is the better
+  Gaussian check for that preset.
 
 ## Controls
 
+- **Presets:** `SHOWCASE` is the visual true-physics demo; `STAT RUN` restores
+  the exact statistical contract; `GAUSSIAN` uses the tuned triangular layout.
 - **Rows (floors):** each row is one fair coin flip.
 - **bins = rows + 1:** one counting bin per landing lane.
 - **Balls / Rate:** total balls and release throughput.

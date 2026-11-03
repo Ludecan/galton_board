@@ -5,6 +5,7 @@
   "scripts": {
     "test": "node --test tests/app.test.js",
     "perf": "node perf/bench.js",
-    "perf:deterministic": "node perf/bench.js --deterministic"
+    "perf:deterministic": "node perf/bench.js --deterministic",
+    "perf:sweep": "node perf/sweep.js"
   }
 }

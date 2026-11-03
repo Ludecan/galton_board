@@ -232,7 +232,7 @@ function createHarness(options = {}) {
       layout, reset, structural,
       computeStats, pmfBinned, getPmf, laneX, binOfX, stackTop, rowHasSpace, rotateRows,
       readHash, writeHash, syncUI, applyTheme, frame, draw,
-      normCdf, normPdf, erf, chiSquareP, ksNormal, kolmogorovQ,
+      normCdf, normPdf, erf, chiSquareP, ksNormal, kolmogorovQ, PRESETS,
     };
     __app.writeHashNow = typeof writeHashNow === 'function' ? writeHashNow : null;
     __app.syncZoom = typeof syncZoom === 'function' ? syncZoom : null;

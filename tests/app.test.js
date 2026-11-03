@@ -39,6 +39,20 @@ test('bins = rows + 1 recovers the exact binomial pmf', () => {
   }
 });
 
+test('parametric layout honors triangular aspect and pin scaling', () => {
+  const { app } = createHarness();
+  app.P.rows = 24;
+  app.P.binsync = true;
+  app.P.bins = 25;
+  app.P.rowAspect = Math.sqrt(3) / 2;
+  app.P.ballScale = 0.15;
+  app.P.pinRatio = 0.62;
+  app.layout();
+
+  approx(app.L.vs, app.L.S * Math.sqrt(3) / 2, 1e-9);
+  approx(app.L.pinR, Math.min(7, app.L.ballR * 0.62), 1e-9);
+});
+
 test('lane centers map to their own bins and pin count is triangular', () => {
   const { app } = createHarness();
   app.P.rows = 8;
@@ -357,6 +371,21 @@ test('true physics mode counts actual landings and remains finite', () => {
   assert.ok(s);
   assert.ok(Number.isFinite(s.chiP));
   assert.ok(Number.isFinite(s.ksP));
+});
+
+test('gaussian preset uses the tuned triangular layout', () => {
+  const { app } = createHarness();
+  const preset = app.PRESETS.gaussian;
+
+  assert.equal(preset.rows, 24);
+  assert.equal(preset.binsync, true);
+  assert.equal(preset.bins, 25);
+  assert.equal(preset.physics, 'true');
+  assert.equal(preset.ballCollisions, false);
+  approx(preset.rowAspect, Math.sqrt(3) / 2, 1e-12);
+  assert.equal(preset.ballScale, 0.15);
+  assert.equal(preset.pinRatio, 0.62);
+  assert.equal(preset.pinTangent, 0.46);
 });
 
 test('hash parser accepts zero gravity', () => {
