@@ -1,0 +1,12 @@
+{
+  "extraKnownMarketplaces": {
+    "personal": {
+      "source": { "source": "github", "repo": "Ludecan/skills-marketplace" },
+      "autoUpdate": true
+    }
+  },
+  "enabledPlugins": {
+    "engineering-core@personal": true,
+    "html-dev@personal": true
+  }
+}
