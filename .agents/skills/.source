@@ -1,0 +1,11 @@
+commit 5ad25fed1b3025605a3d807d45574aa0fbfbeba2
+harness claude,opencode
+skill engineering-core/human-review-helper
+skill engineering-core/make-prs
+skill engineering-core/planning
+skill engineering-core/project-instructions
+skill engineering-core/review-changes
+skill engineering-core/write-good-code
+skill engineering-core/write-pr-description
+skill engineering-core/write-simple-english
+skill html-dev/html-conventions
