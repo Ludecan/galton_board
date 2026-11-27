@@ -32,7 +32,7 @@ The agent instructions of a project come in three layers. Each part owns one res
 | `engineering-core:write-simple-english` | core | marketplace | The English of all text the agent writes. |
 | `engineering-core:human-review-helper` | core | marketplace | Walking a human through a large change. |
 | `ml-experiments:experiment-tracking` | core | marketplace | The experiment procedure: records, naming, reproducibility, comparison, grid runs. |
-| `python-dev:python-conventions` | language | marketplace | Python rules for every project that uses Python. |
+| `python-dev:python-conventions` | language | marketplace | Python rules for every project that uses Python, including lint and tests after a change, dependencies and versioning. |
 | `godot-dev:godot-conventions` | language | marketplace | Godot and GDScript rules for every project that uses Godot. |
 | `html-dev:html-conventions` | language | marketplace | HTML, CSS and JavaScript rules for every project without a build step. |
 
