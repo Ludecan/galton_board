@@ -33,7 +33,7 @@ The agent instructions of a project come in three layers. Each part owns one res
 | `engineering-core:human-review-helper` | core | marketplace | Walking a human through a large change. |
 | `ml-experiments:experiment-tracking` | core | marketplace | The experiment procedure: records, naming, reproducibility, comparison, grid runs. |
 | `python-dev:python-conventions` | language | marketplace | Python rules for every project that uses Python, including lint and tests after a change, dependencies and versioning. |
-| `godot-dev:godot-conventions` | language | marketplace | Godot and GDScript rules for every project that uses Godot. |
+| `godot-dev:godot-conventions` | language | marketplace | Godot and GDScript rules for every project that uses Godot, including format, lint and tests after a change. |
 | `html-dev:html-conventions` | language | marketplace | HTML, CSS and JavaScript rules for every project without a build step. |
 
 The marketplace is the `Ludecan/skills-marketplace` repo. Its skills reach a project as a Claude Code plugin, or as copies in `.agents/skills/` made by its `install.sh`.
