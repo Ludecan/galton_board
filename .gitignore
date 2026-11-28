@@ -1,0 +1,3 @@
+# local agent tooling (shared skills, Claude Code settings)
+.agents/
+.claude/
